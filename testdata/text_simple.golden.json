@@ -1,0 +1,1 @@
+{"commands":[{"type":"RECTANGLE","bbox":{"x":0,"y":0,"w":104,"h":36},"zIndex":0,"id":1806997583,"backgroundColor":[30,30,36,255],"cornerRadius":[0,0,0,0]},{"type":"TEXT","bbox":{"x":8,"y":8,"w":88,"h":20},"zIndex":0,"id":1107366265,"text":"Hello World","color":[240,240,240,255],"fontId":0,"fontSize":16,"letterSpacing":0,"lineHeight":0}]}
