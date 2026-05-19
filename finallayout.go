@@ -40,6 +40,23 @@ func borderHasAnyWidth(b BorderElementConfig) bool {
 	return w.Left > 0 || w.Right > 0 || w.Top > 0 || w.Bottom > 0 || w.BetweenChildren > 0
 }
 
+// emitCommand appends a render command, firing ErrorTypeElementsCapacityExceeded
+// once if the renderCommands Array is full. Mirrors Clay__AddRenderCommand's
+// overflow path (oracle/clay.h ~line 2546). Used by every render-command
+// emission site in this file so the user sees an actionable error instead of
+// silent truncation when the layout has more commands than the arena holds.
+func (c *Context) emitCommand(cmd RenderCommand) {
+	if c.renderCommands.Length >= c.renderCommands.Capacity {
+		if !c.warnMaxElementsExceeded {
+			c.reportError(ErrorTypeElementsCapacityExceeded,
+				"Clay ran out of room in its render-command array. Raise SetMaxElementCount() and re-Initialize with a larger arena.")
+			c.warnMaxElementsExceeded = true
+		}
+		return
+	}
+	c.renderCommands.Add(cmd)
+}
+
 // elementIsOffscreen reports whether a bounding box is fully outside the
 // current viewport. Used to skip render-command emission for elements that
 // won't appear on screen. Mirrors Clay__ElementIsOffscreen (oracle/clay.h
@@ -130,7 +147,7 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 			!c.elementIsOffscreen(clipItem.BoundingBox) {
 			clipScissorBBox = clipItem.BoundingBox
 			emitClipBound = true
-			c.renderCommands.Add(RenderCommand{
+			c.emitCommand(RenderCommand{
 				BoundingBox: clipScissorBBox,
 				UserData:    root.Config.UserData,
 				ID:          HashNumber(root.ID, uint32(root.Children.Length)+10).ID,
@@ -167,11 +184,36 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 			// (oracle/clay.h ~line 2837-2899): BORDER (with between-children
 			// dividers) → OVERLAY_COLOR_END → SCISSOR_END.
 			if !cur.IsTextElement {
+				// Source the bbox from the hashmap (set during the downward
+				// visit, post-transition-application) rather than from
+				// node.position+cur.Dimensions, which capture the pre-
+				// transition position. Otherwise BORDER/dividers draw at the
+				// un-interpolated position while RECTANGLE/IMAGE drew at the
+				// interpolated one.
 				upBBox := BoundingBox{X: node.position.X, Y: node.position.Y, Width: cur.Dimensions.Width, Height: cur.Dimensions.Height}
+				if item := c.getHashMapItem(cur.ID); item != nil {
+					upBBox = item.BoundingBox
+				}
+				// Offscreen elements skip the upward emit (BORDER, dividers,
+				// OVERLAY_END, SCISSOR_END). Matches C `if (generateRenderCommands
+				// && !Clay__ElementIsOffscreen(&currentElementData->boundingBox))`
+				// gate around the entire upward-emit block (oracle/clay.h:2820).
+				if c.elementIsOffscreen(upBBox) {
+					dfs = dfs[:idx]
+					visited = visited[:idx]
+					continue
+				}
 				layoutCfg := &cur.Config.Layout
+				// Clip containers offset their dividers by the clip's
+				// childOffset so the dividers scroll with their siblings.
+				// Matches C 2823-2835.
+				var dividerScrollOffset Vector2
+				if cur.Config.Clip.Horizontal || cur.Config.Clip.Vertical {
+					dividerScrollOffset = cur.Config.Clip.ChildOffset
+				}
 
 				if borderHasAnyWidth(cur.Config.Border) {
-					c.renderCommands.Add(RenderCommand{
+					c.emitCommand(RenderCommand{
 						BoundingBox: upBBox,
 						RenderData: RenderData{
 							Border: BorderRenderData{
@@ -201,10 +243,10 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 							for i := int32(0); i < cur.Children.Length; i++ {
 								child := c.layoutElements.Get(cur.Children.Data[i])
 								if i > 0 {
-									c.renderCommands.Add(RenderCommand{
+									c.emitCommand(RenderCommand{
 										BoundingBox: BoundingBox{
-											X:      upBBox.X + borderOffset.X - halfW,
-											Y:      upBBox.Y,
+											X:      upBBox.X + borderOffset.X + dividerScrollOffset.X - halfW,
+											Y:      upBBox.Y + dividerScrollOffset.Y,
 											Width:  float32(cur.Config.Border.Width.BetweenChildren),
 											Height: cur.Dimensions.Height,
 										},
@@ -224,10 +266,10 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 							for i := int32(0); i < cur.Children.Length; i++ {
 								child := c.layoutElements.Get(cur.Children.Data[i])
 								if i > 0 {
-									c.renderCommands.Add(RenderCommand{
+									c.emitCommand(RenderCommand{
 										BoundingBox: BoundingBox{
-											X:      upBBox.X,
-											Y:      upBBox.Y + borderOffset.Y - halfW,
+											X:      upBBox.X + dividerScrollOffset.X,
+											Y:      upBBox.Y + borderOffset.Y + dividerScrollOffset.Y - halfW,
 											Width:  cur.Dimensions.Width,
 											Height: float32(cur.Config.Border.Width.BetweenChildren),
 										},
@@ -248,7 +290,7 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 				}
 
 				if cur.Config.OverlayColor.A > 0 {
-					c.renderCommands.Add(RenderCommand{
+					c.emitCommand(RenderCommand{
 						RenderData:  RenderData{OverlayColor: OverlayColorRenderData{}}, // C emits zero color here; the END marker doesn't carry color
 						UserData:    cur.Config.UserData,
 						ID:          cur.ID,
@@ -259,7 +301,7 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 				}
 
 				if cur.Config.Clip.Horizontal || cur.Config.Clip.Vertical {
-					c.renderCommands.Add(RenderCommand{
+					c.emitCommand(RenderCommand{
 						ID:          HashNumber(cur.ID, uint32(rootChildCount)+11).ID,
 						ZIndex:      treeZ,
 
@@ -343,7 +385,7 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 				case TextAlignCenter:
 					offsetX /= 2
 				}
-				c.renderCommands.Add(RenderCommand{
+				c.emitCommand(RenderCommand{
 					BoundingBox: BoundingBox{
 						X: bbox.X + offsetX, Y: bbox.Y + yPosition,
 						Width: line.Dimensions.Width, Height: line.Dimensions.Height,
@@ -365,6 +407,13 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 					CommandType: RenderCommandTypeText,
 				})
 				yPosition += finalLineHeight
+				// Halt the per-line loop once we've stepped past the viewport
+				// bottom; further lines would be off-screen. Matches C
+				// `if (!disableCulling && currentElementBoundingBox.y + yPosition
+				// > context->layoutDimensions.height) break;` at oracle/clay.h:3006.
+				if c.cullingEnabled && bbox.Y+yPosition > c.layoutDimensions.Height {
+					break
+				}
 			}
 			// Text leaves have no children; pop now (no upward visit needed).
 			dfs = dfs[:idx]
@@ -377,7 +426,7 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 		// CUSTOM → SCISSOR_START → RECTANGLE.
 
 		if cur.Config.OverlayColor.A > 0 {
-			c.renderCommands.Add(RenderCommand{
+			c.emitCommand(RenderCommand{
 				RenderData: RenderData{
 					OverlayColor: OverlayColorRenderData{Color: cur.Config.OverlayColor},
 				},
@@ -390,7 +439,7 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 		}
 
 		if cur.Config.Image.ImageData != nil {
-			c.renderCommands.Add(RenderCommand{
+			c.emitCommand(RenderCommand{
 				BoundingBox: bbox,
 				RenderData: RenderData{
 					Image: ImageRenderData{
@@ -408,7 +457,7 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 		}
 
 		if cur.Config.Custom.CustomData != nil {
-			c.renderCommands.Add(RenderCommand{
+			c.emitCommand(RenderCommand{
 				BoundingBox: bbox,
 				RenderData: RenderData{
 					Custom: CustomRenderData{
@@ -426,7 +475,7 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 		}
 
 		if cur.Config.Clip.Horizontal || cur.Config.Clip.Vertical {
-			c.renderCommands.Add(RenderCommand{
+			c.emitCommand(RenderCommand{
 				BoundingBox: bbox,
 				RenderData: RenderData{
 					Clip: ClipRenderData{
@@ -447,7 +496,7 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 		// emit their own commands before this and the renderer composites
 		// them in declaration order.
 		if cur.Config.BackgroundColor.A > 0 {
-			c.renderCommands.Add(RenderCommand{
+			c.emitCommand(RenderCommand{
 				BoundingBox: bbox,
 				RenderData: RenderData{
 					Rectangle: RectangleRenderData{
@@ -614,7 +663,7 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 
 	// Close the floating-tree-root scissor opened above, if any.
 	if emitClipBound {
-		c.renderCommands.Add(RenderCommand{
+		c.emitCommand(RenderCommand{
 			ID:          HashNumber(root.ID, uint32(root.Children.Length)+11).ID,
 			ZIndex:      treeRoot.ZIndex,
 			CommandType: RenderCommandTypeScissorEnd,

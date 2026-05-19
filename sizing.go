@@ -178,7 +178,15 @@ func (c *Context) sizeOneRoot(xAxis bool, bfs, resizable *Array[int32]) {
 			sizeToDistribute := parentSize - parentPadding - innerContentSize
 			switch {
 			case sizeToDistribute < 0:
-				// Overflow: shrink the largest resizable children toward
+				// Clip containers don't compress their content — overflow
+				// is what they're for. Matches C clay.h:2407-2410: when the
+				// parent clips on this axis, leave children at their full
+				// preferred sizes and let SCISSOR_START hide the overflow.
+				if (xAxis && parent.Config.Clip.Horizontal) ||
+					(!xAxis && parent.Config.Clip.Vertical) {
+					break
+				}
+				// Otherwise shrink the largest resizable children toward
 				// their minDimensions, taking equal-sized peers together.
 				shrinkOverflow(c, &sizeToDistribute, resizable, xAxis)
 			case sizeToDistribute > 0 && growContainerCount > 0:
