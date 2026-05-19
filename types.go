@@ -72,6 +72,20 @@ type BorderWidth struct {
 	BetweenChildren          uint16
 }
 
+// BorderOutside returns a BorderWidth with the same value on all four outer
+// sides and no between-children divider. Mirrors CLAY_BORDER_OUTSIDE
+// (oracle/clay.h ~line 122).
+func BorderOutside(w uint16) BorderWidth {
+	return BorderWidth{Left: w, Right: w, Top: w, Bottom: w}
+}
+
+// BorderAll returns a BorderWidth with the same value on all four sides
+// AND a matching between-children divider. Mirrors CLAY_BORDER_ALL
+// (oracle/clay.h ~line 124).
+func BorderAll(w uint16) BorderWidth {
+	return BorderWidth{Left: w, Right: w, Top: w, Bottom: w, BetweenChildren: w}
+}
+
 // ChildAlignment controls how children are aligned within their parent on each
 // axis.
 type ChildAlignment struct {

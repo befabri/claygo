@@ -187,3 +187,28 @@ func (c *Context) GetElementData(id ElementID) ElementData {
 func GetElementID(s string) ElementID {
 	return HashString(String{Text: s}, 0)
 }
+
+// GetElementIDWithIndex returns the ElementID equivalent of CLAY_IDI(s, i):
+// HashStringWithOffset folding a numeric index into the hash for
+// loop-stable IDs without pre-formatting the string.
+//
+// Mirrors Clay_GetElementIdWithIndex (oracle/clay.h ~line 4804).
+func GetElementIDWithIndex(s string, index uint32) ElementID {
+	return HashStringWithOffset(String{Text: s}, index, 0)
+}
+
+// GetOpenElementID returns the id of the element currently being
+// configured between BoxID's open and close (typically inside the
+// children closure passed to Box / BoxID / BoxIDOffset). Useful for
+// CLAY_ID_LOCAL-style derived ids that fold the parent id into a child
+// element's seed.
+//
+// Returns zero ElementID when called outside of a frame or when no
+// element is open. Mirrors Clay_GetOpenElementId (oracle/clay.h ~line 4794).
+func (c *Context) GetOpenElementID() ElementID {
+	le := c.getOpenLayoutElement()
+	if le == nil {
+		return ElementID{}
+	}
+	return ElementID{ID: le.ID, BaseID: le.ID}
+}
