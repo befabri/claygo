@@ -644,11 +644,8 @@ func (c *Context) advanceTransitions(deltaTime float32) {
 			td.State = TransitionStateIdle
 			continue
 		}
-		// Handler return semantics differ from upstream: the Go port (see
-		// EaseOut in setters.go) returns true while STILL PROGRESSING and
-		// false ONCE COMPLETE. We invert to a "complete?" bool here to match
-		// the state-machine bookkeeping below.
-		stillProgressing := handler(TransitionCallbackArguments{
+		// Clay transition handlers return true once the transition is complete.
+		transitionComplete := handler(TransitionCallbackArguments{
 			TransitionState: td.State,
 			Initial:         td.InitialState,
 			Current:         &td.CurrentState,
@@ -660,7 +657,7 @@ func (c *Context) advanceTransitions(deltaTime float32) {
 		applyTransitionedPropertiesToElement(currentElement, td.ActiveProperties, td.CurrentState, &mapItem.BoundingBox, td.Reparented)
 		td.ElapsedTime += deltaTime
 
-		if !stillProgressing {
+		if transitionComplete {
 			switch td.State {
 			case TransitionStateEntering, TransitionStateTransitioning:
 				td.State = TransitionStateIdle

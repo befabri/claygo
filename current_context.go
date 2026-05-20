@@ -287,6 +287,9 @@ func (c *Context) OpenTextElement(text String, cfg TextElementConfig) {
 // GetLayoutDimensions returns the configured root layout dimensions.
 func (c *Context) GetLayoutDimensions() Dimensions { return c.LayoutDimensions() }
 
+// GetPointerState returns the current pointer state.
+func (c *Context) GetPointerState() PointerData { return c.PointerState() }
+
 // GetMaxElementCount returns the configured maximum element count.
 func (c *Context) GetMaxElementCount() int32 { return c.MaxElementCount() }
 

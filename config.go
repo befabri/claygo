@@ -112,6 +112,7 @@ type TransitionExitConfig struct {
 // TransitionElementConfig describes how an element should animate between
 // states.
 type TransitionElementConfig struct {
+	// Handler updates args.Current and returns true when the transition is complete.
 	Handler             func(args TransitionCallbackArguments) bool
 	Duration            float32
 	Properties          TransitionProperty

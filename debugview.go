@@ -32,7 +32,7 @@ import "strconv"
 
 // DebugViewWidth is the fixed pixel width of the debug side panel.
 // Mirrors Clay__debugViewWidth (oracle/clay.h:3952).
-var DebugViewWidth float32 = 400
+var DebugViewWidth uint32 = 400
 
 // debugViewRowHeight is the per-row height used in the element list and
 // header. Mirrors CLAY__DEBUGVIEW_ROW_HEIGHT (oracle/clay.h:3206).
@@ -165,7 +165,8 @@ func (c *Context) renderDebugView() {
 	// upstream version derives this geometrically from the pointer Y
 	// (oracle/clay.h:3554) — same trick here. The "-1" offset accounts
 	// for the header row above the list.
-	pointerInPanel := c.pointerPosition.X >= c.layoutDimensions.Width-DebugViewWidth &&
+	debugViewWidth := float32(DebugViewWidth)
+	pointerInPanel := c.pointerPosition.X >= c.layoutDimensions.Width-debugViewWidth &&
 		c.pointerPosition.X <= c.layoutDimensions.Width &&
 		c.pointerPosition.Y >= debugViewRowHeight &&
 		c.pointerPosition.Y < c.layoutDimensions.Height-debugViewInspectorHeight
@@ -186,7 +187,7 @@ func (c *Context) renderDebugView() {
 	BoxID(c, "Clay__Debug_Panel", Decl{
 		Layout: LayoutConfig{
 			Sizing: Sizing{
-				Width:  SizingFixed(DebugViewWidth),
+				Width:  SizingFixed(debugViewWidth),
 				Height: SizingFixed(c.layoutDimensions.Height),
 			},
 			LayoutDirection: TopToBottom,

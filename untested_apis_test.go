@@ -584,7 +584,7 @@ func TestTransitionEnterTriggerVariants(t *testing.T) {
 				Transition: TransitionElementConfig{
 					Handler: func(TransitionCallbackArguments) bool {
 						calls++
-						return true
+						return false
 					},
 					Duration:   0.5,
 					Properties: TransitionPropertyX,
@@ -628,7 +628,7 @@ func TestTransitionPositionDoesNotRetriggerOnRootResize(t *testing.T) {
 				Transition: TransitionElementConfig{
 					Handler: func(TransitionCallbackArguments) bool {
 						calls++
-						return true
+						return false
 					},
 					Duration:   1,
 					Properties: TransitionPropertyX,
@@ -679,6 +679,34 @@ func TestAspectRatioWidthScalesAfterYAxisShrink(t *testing.T) {
 	}
 }
 
+func TestClippedCrossAxisGrowExpandsToInnerContent(t *testing.T) {
+	ctx := freshContext(t)
+	ctx.BeginLayout()
+	BoxID(ctx, "ClipCrossAxis", Decl{
+		Layout: LayoutConfig{
+			Sizing:          Sizing{Width: SizingFixed(100), Height: SizingFixed(100)},
+			LayoutDirection: TopToBottom,
+		},
+		Clip: ClipElementConfig{Horizontal: true},
+	}, func() {
+		BoxID(ctx, "WideContent", Decl{
+			Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(200), Height: SizingFixed(10)}},
+		}, nil)
+		BoxID(ctx, "CrossAxisGrow", Decl{
+			Layout: LayoutConfig{Sizing: Sizing{Width: SizingGrow(0), Height: SizingFixed(10)}},
+		}, nil)
+	})
+	ctx.EndLayout(0)
+
+	grow := ctx.GetElementData(GetElementID("CrossAxisGrow"))
+	if !grow.Found {
+		t.Fatalf("grow child not found")
+	}
+	if grow.BoundingBox.Width != 200 {
+		t.Fatalf("cross-axis grow width = %v, want 200 from clipped inner content", grow.BoundingBox.Width)
+	}
+}
+
 func TestCurrentContextLowLevelAPIs(t *testing.T) {
 	previous := GetCurrentContext()
 	defer SetCurrentContext(previous)
@@ -701,6 +729,10 @@ func TestCurrentContextLowLevelAPIs(t *testing.T) {
 	}
 	if RenderCommandArray_Get(&cmds, 0) == nil {
 		t.Fatalf("RenderCommandArray_Get returned nil for first command")
+	}
+	ctx.SetPointerState(Vector2{X: 1, Y: 2}, false)
+	if got := ctx.GetPointerState().Position; got != (Vector2{X: 1, Y: 2}) {
+		t.Fatalf("ctx.GetPointerState position = %v, want {1 2}", got)
 	}
 }
 
@@ -736,6 +768,159 @@ func TestPackageMaxDefaultsAffectMinMemorySizeAndInitialize(t *testing.T) {
 	}
 	if ctx.MaxMeasureTextCacheWordCount() != 256 {
 		t.Fatalf("initialized max measure words = %d, want 256", ctx.MaxMeasureTextCacheWordCount())
+	}
+}
+
+func TestLocalElementIDHelpersUseOpenElementSeed(t *testing.T) {
+	previous := GetCurrentContext()
+	defer SetCurrentContext(previous)
+
+	ctx := freshContext(t)
+	parentID := GetElementID("LocalParent")
+	var methodID ElementID
+	var methodIndexedID ElementID
+	var packageID ElementID
+	var packageIndexedID ElementID
+	ctx.BeginLayout()
+	BoxID(ctx, "LocalParent", Decl{
+		Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(10), Height: SizingFixed(10)}},
+	}, func() {
+		methodID = ctx.GetElementIDLocal("Child")
+		methodIndexedID = ctx.GetElementIDWithIndexLocal("Child", 7)
+		packageID = GetElementIDLocal("Child")
+		packageIndexedID = GetElementIDWithIndexLocal("Child", 7)
+	})
+	ctx.EndLayout(0)
+
+	want := HashString(String{Text: "Child"}, parentID.ID)
+	wantIndexed := HashStringWithOffset(String{Text: "Child"}, 7, parentID.ID)
+	if methodID.ID != want.ID || packageID.ID != want.ID {
+		t.Fatalf("local IDs = method %d package %d, want %d", methodID.ID, packageID.ID, want.ID)
+	}
+	if methodIndexedID.ID != wantIndexed.ID || packageIndexedID.ID != wantIndexed.ID {
+		t.Fatalf("local indexed IDs = method %d package %d, want %d", methodIndexedID.ID, packageIndexedID.ID, wantIndexed.ID)
+	}
+}
+
+func TestSetLayoutDimensionsUpdatesRootResizedImmediately(t *testing.T) {
+	ctx := freshContext(t)
+	if ctx.RootResizedLastFrame() {
+		t.Fatalf("initial root resize flag = true, want false")
+	}
+	ctx.SetLayoutDimensions(Dimensions{Width: 640, Height: 480})
+	if !ctx.RootResizedLastFrame() {
+		t.Fatalf("root resize flag was not updated immediately")
+	}
+	ctx.SetLayoutDimensions(Dimensions{Width: 640, Height: 480})
+	if ctx.RootResizedLastFrame() {
+		t.Fatalf("root resize flag stayed true after setting same dimensions")
+	}
+}
+
+func TestMeasureTextEntryCapacityReportsTextMeasurementError(t *testing.T) {
+	var errs []ErrorData
+	mem := make([]byte, MinMemorySize())
+	ctx := Initialize(CreateArenaWithCapacityAndMemory(uint(len(mem)), mem), Dimensions{Width: 100, Height: 100}, ErrorHandler{
+		Func: func(err ErrorData) { errs = append(errs, err) },
+	})
+	ctx.SetMeasureTextFunction(deterministicMeasureTextForTest, nil)
+	ctx.measureTextHashMapInternal.Length = ctx.measureTextHashMapInternal.Capacity - 1
+	ctx.measureTextCached("hello", &TextElementConfig{FontSize: 12})
+	if len(errs) != 1 {
+		t.Fatalf("error count = %d, want 1", len(errs))
+	}
+	if errs[0].Type != ErrorTypeTextMeasurementCapacityExceeded {
+		t.Fatalf("error type = %d, want text measurement capacity", errs[0].Type)
+	}
+}
+
+func TestRenderCommandCapacityUsesCapacityMinusOne(t *testing.T) {
+	var errs []ErrorData
+	mem := make([]byte, MinMemorySize())
+	ctx := Initialize(CreateArenaWithCapacityAndMemory(uint(len(mem)), mem), Dimensions{Width: 100, Height: 100}, ErrorHandler{
+		Func: func(err ErrorData) { errs = append(errs, err) },
+	})
+	ctx.renderCommands.Length = ctx.renderCommands.Capacity - 1
+	ctx.emitCommand(RenderCommand{CommandType: RenderCommandTypeRectangle})
+	if ctx.renderCommands.Length != ctx.renderCommands.Capacity-1 {
+		t.Fatalf("render command length changed to %d at capacity-1", ctx.renderCommands.Length)
+	}
+	if len(errs) != 1 || errs[0].Type != ErrorTypeElementsCapacityExceeded {
+		t.Fatalf("errors = %+v, want one elements-capacity error", errs)
+	}
+	if !ctx.warnMaxRenderCommandsExceeded {
+		t.Fatalf("render-command warning flag not set")
+	}
+	if ctx.warnMaxElementsExceeded {
+		t.Fatalf("element warning flag should remain false for render-command overflow")
+	}
+}
+
+func TestFloatingClipSyntheticCommandsMatchOracleFields(t *testing.T) {
+	ctx := freshContext(t)
+	ctx.BeginLayout()
+	BoxID(ctx, "ClipOwner", Decl{
+		Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(100), Height: SizingFixed(100)}},
+		Clip:   ClipElementConfig{Horizontal: true, Vertical: true},
+	}, func() {
+		BoxID(ctx, "FloatingRenderParity", Decl{
+			Layout: LayoutConfig{
+				Sizing:          Sizing{Width: SizingFixed(60), Height: SizingFixed(30)},
+				LayoutDirection: LeftToRight,
+				ChildGap:        4,
+			},
+			Border: BorderElementConfig{
+				Color: RGBA(255, 0, 0, 255),
+				Width: BorderAll(2),
+			},
+			Clip:     ClipElementConfig{Horizontal: true},
+			UserData: "float-user-data",
+			Floating: FloatingElementConfig{
+				AttachTo:     AttachToParent,
+				AttachPoints: FloatingAttachPoints{Parent: AttachPointLeftTop, Element: AttachPointLeftTop},
+				ClipTo:       ClipToAttachedParent,
+				ZIndex:       7,
+			},
+		}, func() {
+			Box(ctx, Decl{Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(10), Height: SizingFixed(10)}}}, nil)
+			Box(ctx, Decl{Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(10), Height: SizingFixed(10)}}}, nil)
+		})
+	})
+	cmds := ctx.EndLayout(0).Commands
+
+	floatingID := GetElementID("FloatingRenderParity").ID
+	borderID := HashNumber(2, floatingID).ID
+	dividerID := HashNumber(4, floatingID).ID
+	foundSyntheticScissorStart := false
+	foundBorder := false
+	foundDivider := false
+	foundScissorEnd := false
+	for _, cmd := range cmds {
+		switch {
+		case cmd.CommandType == RenderCommandTypeScissorStart && cmd.ID != floatingID && cmd.ZIndex == 7:
+			foundSyntheticScissorStart = true
+			if cmd.UserData != nil {
+				t.Fatalf("synthetic floating clip scissor userData = %v, want nil", cmd.UserData)
+			}
+		case cmd.CommandType == RenderCommandTypeBorder && cmd.ID == borderID:
+			foundBorder = true
+			if cmd.ZIndex != 0 {
+				t.Fatalf("border zIndex = %d, want 0", cmd.ZIndex)
+			}
+		case cmd.CommandType == RenderCommandTypeRectangle && cmd.ID == dividerID:
+			foundDivider = true
+			if cmd.ZIndex != 0 {
+				t.Fatalf("between-child divider zIndex = %d, want 0", cmd.ZIndex)
+			}
+		case cmd.CommandType == RenderCommandTypeScissorEnd:
+			foundScissorEnd = true
+			if cmd.ZIndex != 0 {
+				t.Fatalf("scissor end zIndex = %d, want 0", cmd.ZIndex)
+			}
+		}
+	}
+	if !foundSyntheticScissorStart || !foundBorder || !foundDivider || !foundScissorEnd {
+		t.Fatalf("missing expected commands: syntheticScissor=%v border=%v divider=%v scissorEnd=%v", foundSyntheticScissorStart, foundBorder, foundDivider, foundScissorEnd)
 	}
 }
 
@@ -778,7 +963,7 @@ func hasElementID(ids []ElementID, id uint32) bool {
 	return false
 }
 
-func keepTransitionRunning(TransitionCallbackArguments) bool { return true }
+func keepTransitionRunning(TransitionCallbackArguments) bool { return false }
 
 func rectOrder(commands []RenderCommand, include map[uint32]bool) []uint32 {
 	out := []uint32{}

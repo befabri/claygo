@@ -91,7 +91,7 @@ func TestDebugViewShrinksRoot(t *testing.T) {
 		t.Fatal("no layout elements produced")
 	}
 	root := ctx.layoutElements.Get(0)
-	wantWidth := float32(1280) - DebugViewWidth
+	wantWidth := float32(1280) - float32(DebugViewWidth)
 	if root.Dimensions.Width != wantWidth {
 		t.Errorf("root width with debug mode on = %v, want %v",
 			root.Dimensions.Width, wantWidth)
@@ -146,7 +146,7 @@ func debugTestScene(ctx *Context) {
 func pointerInPanelAtRow(row int) Vector2 {
 	// Panel sits flush against the right edge: x range
 	// [1280-DebugViewWidth, 1280]. Pick the middle.
-	panelMidX := 1280 - DebugViewWidth/2
+	panelMidX := 1280 - float32(DebugViewWidth)/2
 	// Pick a Y inside the row's band. The formula is
 	// (Y / rowHeight) - 1 == row, so Y must be in
 	// [(row+1)*rowHeight, (row+2)*rowHeight).

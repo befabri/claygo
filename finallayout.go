@@ -29,15 +29,15 @@ func borderHasAnyWidth(b BorderElementConfig) bool {
 
 // emitCommand appends a render command, firing ErrorTypeElementsCapacityExceeded
 // once if the renderCommands Array is full. Mirrors Clay__AddRenderCommand's
-// overflow path (oracle/clay.h ~line 2546). Used by every render-command
+// capacity-1 guard (oracle/clay.h ~line 2546). Used by every render-command
 // emission site in this file so the user sees an actionable error instead of
 // silent truncation when the layout has more commands than the arena holds.
 func (c *Context) emitCommand(cmd RenderCommand) {
-	if c.renderCommands.Length >= c.renderCommands.Capacity {
-		if !c.warnMaxElementsExceeded {
+	if c.renderCommands.Length >= c.renderCommands.Capacity-1 {
+		if !c.warnMaxRenderCommandsExceeded {
 			c.reportError(ErrorTypeElementsCapacityExceeded,
 				"Clay ran out of room in its render-command array. Raise SetMaxElementCount() and re-Initialize with a larger arena.")
-			c.warnMaxElementsExceeded = true
+			c.warnMaxRenderCommandsExceeded = true
 		}
 		return
 	}
@@ -101,7 +101,7 @@ func (c *Context) calculateFinalLayout(deltaTime float32) RenderCommandArray {
 	}
 
 	// Construct the public-facing array view. We expose only the live
-	// prefix of the arena-backed array so callers don't see stale slots
+	// prefix of the fixed-capacity array so callers don't see stale slots
 	// from prior frames.
 	commands := c.renderCommands.Data[:c.renderCommands.Length]
 	return RenderCommandArray{Commands: commands}
@@ -196,7 +196,6 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 			emitClipBound = true
 			c.emitCommand(RenderCommand{
 				BoundingBox: clipScissorBBox,
-				UserData:    root.Config.UserData,
 				ID:          HashNumber(root.ID, uint32(root.Children.Length)+10).ID,
 				ZIndex:      treeRoot.ZIndex,
 				CommandType: RenderCommandTypeScissorStart,
@@ -215,10 +214,9 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 	visited := []bool{false}
 
 	rootChildCount := root.Children.Length
-	// Every command emitted under this tree root carries the root's
-	// ZIndex (matching C, which writes .zIndex = root->zIndex on every
-	// RenderCommand). Floating roots can have non-zero ZIndex; the
-	// auto-root uses zero.
+	// Downward render commands emitted under this tree root carry the root's
+	// ZIndex. Some upward/end commands intentionally keep the zero value to match
+	// oracle initializers.
 	treeZ := treeRoot.ZIndex
 
 	for len(dfs) > 0 {
@@ -274,7 +272,6 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 						},
 						UserData: cur.Config.UserData,
 						ID:       HashNumber(uint32(cur.Children.Length), cur.ID).ID,
-						ZIndex:   treeZ,
 
 						CommandType: RenderCommandTypeBorder,
 					})
@@ -305,7 +302,6 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 										},
 										UserData: cur.Config.UserData,
 										ID:       HashNumber(uint32(cur.Children.Length+1+i), cur.ID).ID,
-										ZIndex:   treeZ,
 
 										CommandType: RenderCommandTypeRectangle,
 									})
@@ -328,7 +324,6 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 										},
 										UserData: cur.Config.UserData,
 										ID:       HashNumber(uint32(cur.Children.Length+1+i), cur.ID).ID,
-										ZIndex:   treeZ,
 
 										CommandType: RenderCommandTypeRectangle,
 									})
@@ -352,8 +347,7 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 
 				if cur.Config.Clip.Horizontal || cur.Config.Clip.Vertical {
 					c.emitCommand(RenderCommand{
-						ID:     HashNumber(cur.ID, uint32(rootChildCount)+11).ID,
-						ZIndex: treeZ,
+						ID: HashNumber(cur.ID, uint32(rootChildCount)+11).ID,
 
 						CommandType: RenderCommandTypeScissorEnd,
 					})
@@ -733,7 +727,6 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 	if emitClipBound {
 		c.emitCommand(RenderCommand{
 			ID:          HashNumber(root.ID, uint32(root.Children.Length)+11).ID,
-			ZIndex:      treeRoot.ZIndex,
 			CommandType: RenderCommandTypeScissorEnd,
 		})
 	}

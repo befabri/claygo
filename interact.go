@@ -33,8 +33,12 @@ func pointIsInsideRect(p Vector2, r BoundingBox) bool {
 //
 // Mirrors Clay_SetPointerState (oracle/clay.h ~line 4084).
 func (c *Context) SetPointerState(pos Vector2, isDown bool) {
+	if c.warnMaxElementsExceeded {
+		return
+	}
 	c.pointerPosition = pos
 	c.pointerDown = isDown
+	c.pointerData.Position = pos
 	c.pointerOverIds.Length = 0
 
 	// Walk every tree root in REVERSE z-order so top-most elements appear
@@ -50,6 +54,17 @@ func (c *Context) SetPointerState(pos Vector2, isDown bool) {
 		}
 	}
 
+	// Fire OnHover callbacks before transitioning press/release state, matching
+	// Clay_SetPointerState's callback ordering.
+	for i := int32(0); i < c.pointerOverIds.Length; i++ {
+		id := c.pointerOverIds.GetValue(i)
+		item := c.getHashMapItem(id.ID)
+		if item == nil || item.OnHoverFunction == nil {
+			continue
+		}
+		item.OnHoverFunction(id, c.pointerData, item.HoverFunctionUserData)
+	}
+
 	// Transition the press/release state machine.
 	prev := c.pointerData.State
 	switch {
@@ -61,17 +76,6 @@ func (c *Context) SetPointerState(pos Vector2, isDown bool) {
 		c.pointerData.State = PointerDataReleased
 	default:
 		c.pointerData.State = PointerDataReleasedThisFrame
-	}
-	c.pointerData.Position = pos
-
-	// Fire OnHover callbacks for every id the pointer is currently over.
-	for i := int32(0); i < c.pointerOverIds.Length; i++ {
-		id := c.pointerOverIds.GetValue(i)
-		item := c.getHashMapItem(id.ID)
-		if item == nil || item.OnHoverFunction == nil {
-			continue
-		}
-		item.OnHoverFunction(id, c.pointerData, item.HoverFunctionUserData)
 	}
 }
 
@@ -112,8 +116,8 @@ func (c *Context) collectPointerOver(rootIdx int32) bool {
 		// Descend into children. Order doesn't matter for hit-testing
 		// purposes; deeper hits land later in the list within a tree, and
 		// REVERSE tree-root order handles z-stacking at the root level.
-		for i := int32(0); i < element.Children.Length; i++ {
-			stack = append(stack, element.Children.Data[i])
+		for i := element.Children.Length; i > 0; i-- {
+			stack = append(stack, element.Children.Data[i-1])
 		}
 	}
 	return found
@@ -161,15 +165,19 @@ func (c *Context) PointerOver(id ElementID) bool {
 // frame's bounding box — fresh-this-frame bboxes aren't computed until
 // EndLayout. Mirrors Clay_Hovered (oracle/clay.h ~line 4808).
 func (c *Context) Hovered() bool {
+	if c.warnMaxElementsExceeded {
+		return false
+	}
 	openLE := c.getOpenLayoutElement()
 	if openLE == nil {
 		return false
 	}
-	item := c.getHashMapItem(openLE.ID)
-	if item == nil {
-		return false
+	for i := int32(0); i < c.pointerOverIds.Length; i++ {
+		if c.pointerOverIds.GetValue(i).ID == openLE.ID {
+			return true
+		}
 	}
-	return pointIsInsideRect(c.pointerPosition, item.BoundingBox)
+	return false
 }
 
 // OnHover registers a callback fired by SetPointerState whenever the
@@ -231,6 +239,39 @@ func GetElementID(s string) ElementID {
 // Mirrors Clay_GetElementIdWithIndex (oracle/clay.h ~line 4804).
 func GetElementIDWithIndex(s string, index uint32) ElementID {
 	return HashStringWithOffset(String{Text: s}, index, 0)
+}
+
+// GetElementIDLocal is the ElementID equivalent of CLAY_ID_LOCAL(s): it hashes
+// using the currently open element id on the current Context as the seed.
+func GetElementIDLocal(s string) ElementID {
+	if currentContext == nil {
+		return HashString(String{Text: s}, 0)
+	}
+	return currentContext.GetElementIDLocal(s)
+}
+
+// GetElementIDWithIndexLocal is the ElementID equivalent of
+// CLAY_IDI_LOCAL(s, i): it folds index into a hash seeded by the currently open
+// element id on the current Context.
+func GetElementIDWithIndexLocal(s string, index uint32) ElementID {
+	if currentContext == nil {
+		return HashStringWithOffset(String{Text: s}, index, 0)
+	}
+	return currentContext.GetElementIDWithIndexLocal(s, index)
+}
+
+// GetElementIDLocal hashes s using this Context's currently open element id as
+// the seed.
+func (c *Context) GetElementIDLocal(s string) ElementID {
+	seed := c.GetOpenElementID().ID
+	return HashString(String{Text: s}, seed)
+}
+
+// GetElementIDWithIndexLocal hashes s and index using this Context's currently
+// open element id as the seed.
+func (c *Context) GetElementIDWithIndexLocal(s string, index uint32) ElementID {
+	seed := c.GetOpenElementID().ID
+	return HashStringWithOffset(String{Text: s}, index, seed)
 }
 
 // GetOpenElementID returns the id of the element currently being

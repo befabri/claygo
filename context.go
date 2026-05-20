@@ -79,12 +79,8 @@ type Context struct {
 	// LocalAutoID() / GetLocalAutoID() advance it. Resets in BeginLayout.
 	dynamicElementIndex uint32
 
-	// previousLayoutDimensions records the size from the most recent
-	// BeginLayout so the next BeginLayout can compute rootResizedLastFrame.
-	previousLayoutDimensions Dimensions
-
-	// rootResizedLastFrame is true when the viewport changed size between
-	// the previous and current frame. The transition advance loop reads it
+	// rootResizedLastFrame is true when SetLayoutDimensions changed the viewport
+	// dimensions. The transition advance loop reads it
 	// to skip re-triggering position transitions on window resize (would
 	// otherwise cause every element to animate to its new position).
 	rootResizedLastFrame bool
@@ -142,6 +138,7 @@ type Context struct {
 	warnHashMapCapacityExceeded       bool
 	warnMaxTextMeasureCacheExceeded   bool
 	warnMaxElementsExceeded           bool
+	warnMaxRenderCommandsExceeded     bool
 	warnTextMeasurementFunctionNotSet bool
 
 	// debugSelectedElementID is the id of the element the user clicked on in
@@ -171,7 +168,7 @@ type Context struct {
 	//   - dynamicStringData / dynamicElementIndexBaseHash: Clay__IntToString
 	//     write buffer + hash seed. The Go debug view uses strconv.Itoa.
 	//   - layoutElementTreeNodeArray1, treeNodeVisited, reusableElementIndexBuffer:
-	//     arena-backed scratch slots used by upstream's DFS. The Go port
+	//     fixed-capacity scratch slots used by upstream's DFS. The Go port
 	//     uses per-call Go slices instead; equivalent behavior, less arena.
 	//   - exitingElementsLength / exitingElementsChildrenLength: replaced
 	//     by the high-index-region trick in cloneElementsWithExitTransition.
@@ -238,9 +235,6 @@ func Initialize(arena Arena, layoutDimensions Dimensions, errorHandler ErrorHand
 		// Zero value of PointerDataInteractionState is PressedThisFrame; the
 		// state machine assumes Released as the initial "nothing pressed" state.
 		pointerData: PointerData{State: PointerDataReleased},
-		// Seed previousLayoutDimensions so the first BeginLayout reports
-		// no resize event (rootResizedLastFrame == false).
-		previousLayoutDimensions: layoutDimensions,
 	}
 	SetCurrentContext(ctx)
 	ctx.initializePersistentMemory()
@@ -274,6 +268,7 @@ func (c *Context) initializePersistentMemory() {
 	c.measureTextHashMap = NewArray[int32](maxElements, a)
 	c.measuredWords = NewArray[MeasuredWord](maxWords, a)
 	c.scrollContainerDatas = NewArray[scrollContainerDataInternal](maxElements, a)
+	c.pointerOverIds = NewArray[ElementID](maxElements, a)
 	// transitionDatas: upstream hard-codes 200 entries (oracle/clay.h ~line
 	// 2252). We follow suit; a UI rarely has hundreds of concurrently
 	// transitioning elements and the per-entry footprint is small.
@@ -298,7 +293,6 @@ func (c *Context) initializeEphemeralMemory() {
 	c.layoutElementTreeRoots = NewArray[layoutElementTreeRoot](maxElements, a)
 	c.wrappedTextLines = NewArray[WrappedTextLine](maxElements, a)
 	c.textElements = NewArray[int32](maxElements, a)
-	c.pointerOverIds = NewArray[ElementID](maxElements, a)
 	c.openClipElementStack = NewArray[int32](maxElements, a)
 	c.layoutElementClipElementIds = NewArray[int32](maxElements, a)
 	// Pre-grow to capacity-equivalent length so [idx] writes are valid.
@@ -320,8 +314,11 @@ func (c *Context) SetMeasureTextFunction(
 }
 
 // SetLayoutDimensions updates the root layout dimensions (typically the
-// window size). Take effect on the next BeginLayout.
-func (c *Context) SetLayoutDimensions(d Dimensions) { c.layoutDimensions = d }
+// window size). Takes effect on the next BeginLayout.
+func (c *Context) SetLayoutDimensions(d Dimensions) {
+	c.rootResizedLastFrame = c.layoutDimensions != d
+	c.layoutDimensions = d
+}
 
 // LayoutDimensions returns the current root dimensions.
 func (c *Context) LayoutDimensions() Dimensions { return c.layoutDimensions }
@@ -337,19 +334,13 @@ func (c *Context) LayoutDimensions() Dimensions { return c.layoutDimensions }
 // parent via openLayoutElementStack[Length-2] without special-casing the top
 // of the tree.
 func (c *Context) BeginLayout() {
-	// Detect viewport resize before re-init wipes the dimensions field.
-	// Transitions read this to skip re-triggering position animations
-	// when the user resizes the window (without it, every element on
-	// screen would animate to its new spot).
-	c.rootResizedLastFrame = c.previousLayoutDimensions != c.layoutDimensions
-	c.previousLayoutDimensions = c.layoutDimensions
-
 	c.initializeEphemeralMemory()
 	c.generation++
 	c.dynamicElementIndex = 0
 	c.warnHashMapCapacityExceeded = false
 	c.warnMaxTextMeasureCacheExceeded = false
 	c.warnMaxElementsExceeded = false
+	c.warnMaxRenderCommandsExceeded = false
 	c.warnTextMeasurementFunctionNotSet = false
 	c.warnings = c.warnings[:0]
 	c.warningsEnabled = true
@@ -359,7 +350,7 @@ func (c *Context) BeginLayout() {
 	// on the right to make room for the side panel; mirrors clay.h:4362-4364.
 	rootWidth := c.layoutDimensions.Width
 	if c.debugMode {
-		rootWidth -= DebugViewWidth
+		rootWidth -= float32(DebugViewWidth)
 	}
 	c.openElementWithID(rootElementIDString)
 	c.configureOpenElement(Decl{

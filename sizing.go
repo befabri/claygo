@@ -195,6 +195,11 @@ func (c *Context) sizeOneRoot(xAxis bool, bfs, resizable *Array[int32]) {
 			// clamped to their own max; everything else stays put but is
 			// clamped to (minDim, parent inner size).
 			maxSize := parentSize - parentPadding
+			if (xAxis && parent.Config.Clip.Horizontal) || (!xAxis && parent.Config.Clip.Vertical) {
+				if innerContentSize > maxSize {
+					maxSize = innerContentSize
+				}
+			}
 			for childOffset := int32(0); childOffset < resizable.Length; childOffset++ {
 				childIdx := resizable.GetValue(childOffset)
 				child := c.layoutElements.Get(childIdx)

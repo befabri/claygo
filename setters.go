@@ -96,24 +96,23 @@ func (c *Context) ExternalScrollHandlingEnabled() bool { return c.externalScroll
 // EaseOut is the built-in cubic ease-out curve, intended as a
 // TransitionElementConfig.Handler. It interpolates each transitioning
 // property linearly along an ease-out cubic and writes the result into
-// args.Current. Returns true while the transition is still progressing,
-// false once it's complete.
+// args.Current. Returns true once the transition is complete.
 //
 // Mirrors Clay_EaseOut (oracle/clay.h ~line 4952).
 func EaseOut(args TransitionCallbackArguments) bool {
-	if args.Duration <= 0 {
-		return false
-	}
-	t := args.ElapsedTime / args.Duration
-	if t >= 1 {
-		t = 1
+	ratio := float32(1)
+	if args.Duration > 0 {
+		ratio = args.ElapsedTime / args.Duration
+		if ratio >= 1 {
+			ratio = 1
+		}
 	}
 	// Ease-out cubic: f(t) = 1 - (1-t)^3
-	inv := 1 - t
+	inv := 1 - ratio
 	progress := 1 - inv*inv*inv
 
 	if args.Current == nil {
-		return t < 1
+		return ratio >= 1
 	}
 	initial := args.Initial
 	target := args.Target
@@ -139,8 +138,17 @@ func EaseOut(args TransitionCallbackArguments) bool {
 	if args.Properties&TransitionPropertyBorderColor != 0 {
 		args.Current.BorderColor = lerpColor(initial.BorderColor, target.BorderColor, progress)
 	}
+	if args.Properties&TransitionPropertyBorderWidth != 0 {
+		args.Current.BorderWidth = BorderWidth{
+			Left:            lerpUint16(initial.BorderWidth.Left, target.BorderWidth.Left, progress),
+			Right:           lerpUint16(initial.BorderWidth.Right, target.BorderWidth.Right, progress),
+			Top:             lerpUint16(initial.BorderWidth.Top, target.BorderWidth.Top, progress),
+			Bottom:          lerpUint16(initial.BorderWidth.Bottom, target.BorderWidth.Bottom, progress),
+			BetweenChildren: lerpUint16(initial.BorderWidth.BetweenChildren, target.BorderWidth.BetweenChildren, progress),
+		}
+	}
 
-	return t < 1
+	return ratio >= 1
 }
 
 func lerpColor(a, b Color, t float32) Color {
@@ -150,4 +158,8 @@ func lerpColor(a, b Color, t float32) Color {
 		B: a.B + (b.B-a.B)*t,
 		A: a.A + (b.A-a.A)*t,
 	}
+}
+
+func lerpUint16(a, b uint16, t float32) uint16 {
+	return uint16(float32(a) + (float32(b)-float32(a))*t)
 }

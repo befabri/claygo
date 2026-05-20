@@ -125,6 +125,38 @@ func TestOnHoverCallback(t *testing.T) {
 	}
 }
 
+func TestOnHoverReceivesPreTransitionPointerState(t *testing.T) {
+	ctx := freshContext(t)
+	ctx.BeginLayout()
+	var captured PointerDataInteractionState
+	called := false
+	BoxID(ctx, "PressTarget", Decl{
+		Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(80), Height: SizingFixed(20)}},
+	}, func() {
+		ctx.OnHover(func(_ ElementID, pointer PointerData, _ any) {
+			called = true
+			captured = pointer.State
+		}, nil)
+	})
+	ctx.EndLayout(0)
+
+	ctx.SetPointerState(Vector2{X: 200, Y: 200}, false)
+	ctx.SetPointerState(Vector2{X: 200, Y: 200}, false)
+	if got := ctx.PointerState().State; got != PointerDataReleased {
+		t.Fatalf("setup pointer state = %d, want released", got)
+	}
+	ctx.SetPointerState(Vector2{X: 10, Y: 10}, true)
+	if !called {
+		t.Fatalf("OnHover callback was not called")
+	}
+	if captured != PointerDataReleased {
+		t.Fatalf("OnHover pointer state = %d, want previous released state", captured)
+	}
+	if got := ctx.PointerState().State; got != PointerDataPressedThisFrame {
+		t.Fatalf("post-call pointer state = %d, want pressed-this-frame", got)
+	}
+}
+
 // TestGetPointerOverIdsContainsHits verifies that the snapshot returned by
 // GetPointerOverIds includes every element the pointer is currently over.
 func TestGetPointerOverIdsContainsHits(t *testing.T) {
@@ -195,5 +227,89 @@ func TestHoveredQueriesPreviousFrameBBox(t *testing.T) {
 
 	if !gotHovered {
 		t.Errorf("Hovered() returned false; want true for pointer inside the element's bbox")
+	}
+}
+
+func TestHoveredUsesPointerOverIdsAndRespectsClip(t *testing.T) {
+	ctx := freshContext(t)
+	build := func(capture *bool) {
+		ctx.BeginLayout()
+		BoxID(ctx, "HoverClipParent", Decl{
+			Layout: LayoutConfig{
+				Sizing:  Sizing{Width: SizingFixed(50), Height: SizingFixed(50)},
+				Padding: Padding{Left: 60},
+			},
+			Clip: ClipElementConfig{Horizontal: true, Vertical: true},
+		}, func() {
+			BoxID(ctx, "HoverClippedChild", Decl{
+				Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(20), Height: SizingFixed(20)}},
+			}, func() {
+				if capture != nil {
+					*capture = ctx.Hovered()
+				}
+			})
+		})
+		ctx.EndLayout(0)
+	}
+
+	build(nil)
+	ctx.SetPointerState(Vector2{X: 65, Y: 10}, false)
+	var hovered bool
+	build(&hovered)
+	if hovered {
+		t.Fatalf("Hovered returned true for child outside its clip ancestor")
+	}
+}
+
+func TestScrollPriorityUsesDeclarationOrderAtSharedEdge(t *testing.T) {
+	ctx := freshContext(t)
+	ctx.BeginLayout()
+	BoxID(ctx, "ScrollPriorityParent", Decl{
+		Layout: LayoutConfig{
+			Sizing:          Sizing{Width: SizingFixed(200), Height: SizingFixed(50)},
+			LayoutDirection: LeftToRight,
+		},
+	}, func() {
+		for _, name := range []string{"ScrollA", "ScrollB"} {
+			BoxID(ctx, name, Decl{
+				Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(100), Height: SizingFixed(50)}},
+				Clip:   ClipElementConfig{Vertical: true},
+			}, func() {
+				Box(ctx, Decl{Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(100), Height: SizingFixed(200)}}}, nil)
+			})
+		}
+	})
+	ctx.EndLayout(0)
+
+	ctx.SetPointerState(Vector2{X: 100, Y: 10}, false)
+	ctx.UpdateScrollContainers(false, Vector2{Y: -1}, 1.0/60.0)
+	a := ctx.GetScrollContainerData(GetElementID("ScrollA"))
+	b := ctx.GetScrollContainerData(GetElementID("ScrollB"))
+	if a.ScrollPosition.Y != 0 {
+		t.Fatalf("earlier scroll container moved to %v, want 0", a.ScrollPosition.Y)
+	}
+	if b.ScrollPosition.Y != -10 {
+		t.Fatalf("later scroll container moved to %v, want -10", b.ScrollPosition.Y)
+	}
+}
+
+func TestSetPointerStateReturnsWhenMaxElementsExceeded(t *testing.T) {
+	ctx := freshContext(t)
+	ctx.BeginLayout()
+	called := false
+	BoxID(ctx, "OverflowGuardTarget", Decl{
+		Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(50), Height: SizingFixed(50)}},
+	}, func() {
+		ctx.OnHover(func(ElementID, PointerData, any) { called = true }, nil)
+	})
+	ctx.EndLayout(0)
+
+	ctx.warnMaxElementsExceeded = true
+	ctx.SetPointerState(Vector2{X: 10, Y: 10}, false)
+	if called {
+		t.Fatalf("OnHover callback fired despite max-elements warning")
+	}
+	if ctx.PointerOver(GetElementID("OverflowGuardTarget")) {
+		t.Fatalf("PointerOver updated despite max-elements warning")
 	}
 }

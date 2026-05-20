@@ -11,11 +11,13 @@ import (
 
 // linearXInterpolator is a minimal transition handler that linearly
 // interpolates the X axis from initial to target over its full duration.
-// Follows the Go port's handler convention (see setters.go::EaseOut):
-// returns true while STILL PROGRESSING, false once the transition is done.
+// Follows Clay's handler convention: returns true once complete.
 func linearXInterpolator(args TransitionCallbackArguments) bool {
 	if args.Duration <= 0 {
-		return false
+		if args.Current != nil && args.Properties&TransitionPropertyX != 0 {
+			args.Current.BoundingBox.X = args.Target.BoundingBox.X
+		}
+		return true
 	}
 	t := args.ElapsedTime / args.Duration
 	if t >= 1 {
@@ -25,7 +27,7 @@ func linearXInterpolator(args TransitionCallbackArguments) bool {
 		args.Current.BoundingBox.X = args.Initial.BoundingBox.X +
 			(args.Target.BoundingBox.X-args.Initial.BoundingBox.X)*t
 	}
-	return t < 1
+	return t >= 1
 }
 
 // findRectCommand returns the (first) RECTANGLE command for the element with
@@ -210,6 +212,88 @@ func TestTransitionsEaseOutProgressesToTarget(t *testing.T) {
 	td := ctx.transitionDatas.Get(0)
 	if td.State != TransitionStateIdle {
 		t.Errorf("transition.State after completion = %d, want IDLE", td.State)
+	}
+}
+
+func TestTransitionHandlerTrueCompletesImmediately(t *testing.T) {
+	ctx := freshContext(t)
+	calls := 0
+	build := func(paddingLeft uint16) {
+		ctx.BeginLayout()
+		Box(ctx, Decl{
+			Layout: LayoutConfig{
+				Sizing:  Sizing{Width: SizingFixed(200), Height: SizingFixed(50)},
+				Padding: Padding{Left: paddingLeft},
+			},
+		}, func() {
+			BoxID(ctx, "Completes", Decl{
+				Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(20), Height: SizingFixed(20)}},
+				Transition: TransitionElementConfig{
+					Handler: func(TransitionCallbackArguments) bool {
+						calls++
+						return true
+					},
+					Duration:   1,
+					Properties: TransitionPropertyX,
+				},
+			}, nil)
+		})
+		ctx.EndLayout(0)
+	}
+
+	build(0)
+	build(100)
+	if calls != 1 {
+		t.Fatalf("handler calls = %d, want 1", calls)
+	}
+	if got := ctx.transitionDatas.Get(0).State; got != TransitionStateIdle {
+		t.Fatalf("transition state = %d, want idle after handler returned complete", got)
+	}
+}
+
+func TestEaseOutAppliesTargetForZeroDurationAndBorderWidth(t *testing.T) {
+	current := TransitionData{}
+	complete := EaseOut(TransitionCallbackArguments{
+		Current: &current,
+		Target: TransitionData{
+			BoundingBox:     BoundingBox{X: 10, Y: 20, Width: 30, Height: 40},
+			BackgroundColor: RGBA(10, 20, 30, 40),
+			OverlayColor:    RGBA(50, 60, 70, 80),
+			BorderColor:     RGBA(90, 100, 110, 120),
+			BorderWidth:     BorderWidth{Left: 1, Right: 2, Top: 3, Bottom: 4, BetweenChildren: 5},
+		},
+		Duration: 0,
+		Properties: TransitionPropertyBoundingBox |
+			TransitionPropertyBackgroundColor |
+			TransitionPropertyOverlayColor |
+			TransitionPropertyBorderColor |
+			TransitionPropertyBorderWidth,
+	})
+	if !complete {
+		t.Fatalf("EaseOut zero-duration returned incomplete")
+	}
+	if current.BoundingBox != (BoundingBox{X: 10, Y: 20, Width: 30, Height: 40}) {
+		t.Fatalf("zero-duration bbox = %v, want target", current.BoundingBox)
+	}
+	if current.BorderWidth != (BorderWidth{Left: 1, Right: 2, Top: 3, Bottom: 4, BetweenChildren: 5}) {
+		t.Fatalf("zero-duration border width = %v, want target", current.BorderWidth)
+	}
+
+	current = TransitionData{BorderWidth: BorderWidth{Left: 2, Right: 2, Top: 2, Bottom: 2, BetweenChildren: 2}}
+	complete = EaseOut(TransitionCallbackArguments{
+		Initial:     current,
+		Current:     &current,
+		Target:      TransitionData{BorderWidth: BorderWidth{Left: 10, Right: 10, Top: 10, Bottom: 10, BetweenChildren: 10}},
+		ElapsedTime: 0.5,
+		Duration:    1,
+		Properties:  TransitionPropertyBorderWidth,
+	})
+	if complete {
+		t.Fatalf("EaseOut half-duration returned complete")
+	}
+	want := BorderWidth{Left: 9, Right: 9, Top: 9, Bottom: 9, BetweenChildren: 9}
+	if current.BorderWidth != want {
+		t.Fatalf("half-duration border width = %v, want %v", current.BorderWidth, want)
 	}
 }
 

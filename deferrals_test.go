@@ -3,9 +3,9 @@ package claygo
 import "testing"
 
 // TestRootResizedLastFrameDetectsResize covers the rootResizedLastFrame
-// flag: false on the first frame and on frames where dimensions match the
-// prior frame; true the first BeginLayout after a SetLayoutDimensions
-// changes the viewport.
+// flag: false on the first frame and when SetLayoutDimensions receives the
+// current dimensions; true immediately after SetLayoutDimensions changes the
+// viewport.
 func TestRootResizedLastFrameDetectsResize(t *testing.T) {
 	ctx := freshContext(t)
 
@@ -31,7 +31,8 @@ func TestRootResizedLastFrameDetectsResize(t *testing.T) {
 	}
 	ctx.EndLayout(0)
 
-	// Frame 4 — viewport unchanged from frame 3, flag should drop.
+	// Frame 4 — caller reports the unchanged viewport, so the flag drops.
+	ctx.SetLayoutDimensions(Dimensions{Width: 800, Height: 600})
 	ctx.BeginLayout()
 	if ctx.RootResizedLastFrame() {
 		t.Errorf("frame after resize: expected RootResizedLastFrame=false")
