@@ -1,6 +1,6 @@
 package claygo
 
-import "unsafe"
+import "reflect"
 
 // Array is a fixed-capacity typed slice with arena-enforced capacity. Mirrors
 // Clay's CLAY__ARRAY_DEFINE pattern: callers allocate via NewArray with a known
@@ -27,8 +27,8 @@ func NewArray[T any](capacity int32, arena *Arena) Array[T] {
 		return Array[T]{}
 	}
 	if arena != nil {
-		var zero T
-		if arena.allocBytes(uintptr(capacity)*unsafe.Sizeof(zero), unsafe.Alignof(zero)) == nil {
+		typ := reflect.TypeFor[T]()
+		if arena.allocBytes(uintptr(capacity)*typ.Size(), uintptr(typ.Align())) == nil {
 			return Array[T]{}
 		}
 	}

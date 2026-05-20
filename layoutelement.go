@@ -5,7 +5,7 @@ package claygo
 //
 // In the C original the (config, textConfig+textElementData) pair is a union;
 // in Go we just keep both members and use IsTextElement as the discriminator.
-// Memory cost is small (a few words) and avoids unsafe.Pointer punning.
+// Memory cost is small (a few words) and avoids low-level pointer punning.
 type LayoutElement struct {
 	// Children holds indices into Context.layoutElements for each child of
 	// this element, in declaration order. The slice header points into the

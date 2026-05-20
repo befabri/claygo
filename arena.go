@@ -1,6 +1,6 @@
 package claygo
 
-import "unsafe"
+import "reflect"
 
 // MinMemorySize returns the byte size of the arena that Initialize requires
 // for the current max-element and measure-text word-cache counts. Package-level
@@ -79,8 +79,7 @@ func minMemorySizeFor(maxElements, maxWords int32) uint {
 // n entries. Array payloads are typed Go slices, but the arena still enforces
 // the same capacity budget and soft-fail behavior as the C implementation.
 func sizeOfArray[T any](n int32) uintptr {
-	var zero T
-	return uintptr(n) * unsafe.Sizeof(zero)
+	return uintptr(n) * reflect.TypeFor[T]().Size()
 }
 
 var (

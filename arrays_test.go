@@ -1,9 +1,6 @@
 package claygo
 
-import (
-	"testing"
-	"unsafe"
-)
+import "testing"
 
 // newTestArena returns a freshly-allocated arena of the given byte capacity.
 func newTestArena(t *testing.T, capacity uint) *Arena {
@@ -416,15 +413,16 @@ func TestArrayDataUsesTypedGoSliceNotArenaBytes(t *testing.T) {
 		t.Fatalf("NewArray did not reserve arena capacity")
 	}
 
-	arenaStart := uintptr(unsafe.Pointer(&mem[0]))
-	arenaEnd := arenaStart + uintptr(len(mem))
-	dataPtr := uintptr(unsafe.Pointer(&arr.Data[0]))
-	if dataPtr >= arenaStart && dataPtr < arenaEnd {
-		t.Fatalf("Array data is backed by arena bytes; pointer-bearing arrays must use typed Go memory")
-	}
-
 	value := 42
 	arr.Add(pointerStruct{Text: "hello", Data: []string{"world"}, Next: &value})
+	clear(mem)
+	got := arr.GetValue(0)
+	if got.Text != "hello" {
+		t.Fatalf("array data changed after clearing arena bytes; got text %q", got.Text)
+	}
+	if got.Data == nil {
+		t.Fatalf("array data interface was cleared with arena bytes")
+	}
 	for i := 0; i < 10; i++ {
 		arr.Set(0, pointerStruct{Text: "again", Data: map[string]int{"x": i}, Next: &value})
 	}
