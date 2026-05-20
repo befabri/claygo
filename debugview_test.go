@@ -79,7 +79,7 @@ func TestDebugViewEmitsCommands(t *testing.T) {
 }
 
 // TestDebugViewShrinksRoot verifies BeginLayout's debug-mode adjustment:
-// the root container's width must drop by debugViewWidth when debugMode
+// the root container's width must drop by DebugViewWidth when debugMode
 // is enabled so the side panel has somewhere to sit.
 func TestDebugViewShrinksRoot(t *testing.T) {
 	ctx := freshContext(t)
@@ -91,10 +91,30 @@ func TestDebugViewShrinksRoot(t *testing.T) {
 		t.Fatal("no layout elements produced")
 	}
 	root := ctx.layoutElements.Get(0)
-	wantWidth := float32(1280) - debugViewWidth
+	wantWidth := float32(1280) - DebugViewWidth
 	if root.Dimensions.Width != wantWidth {
 		t.Errorf("root width with debug mode on = %v, want %v",
 			root.Dimensions.Width, wantWidth)
+	}
+}
+
+func TestDebugViewGlobalsAreCustomizable(t *testing.T) {
+	oldWidth := DebugViewWidth
+	oldHighlight := DebugViewHighlightColor
+	defer func() {
+		DebugViewWidth = oldWidth
+		DebugViewHighlightColor = oldHighlight
+	}()
+
+	DebugViewWidth = 320
+	DebugViewHighlightColor = RGBA(1, 2, 3, 4)
+	ctx := freshContext(t)
+	ctx.SetDebugModeEnabled(true)
+	ctx.BeginLayout()
+	ctx.EndLayout(0)
+	root := ctx.layoutElements.Get(0)
+	if root.Dimensions.Width != 1280-320 {
+		t.Fatalf("root width with custom DebugViewWidth = %v, want %v", root.Dimensions.Width, float32(1280-320))
 	}
 }
 
@@ -125,8 +145,8 @@ func debugTestScene(ctx *Context) {
 // highlightedRow formula in debugview.go (pointerY/rowHeight - 1).
 func pointerInPanelAtRow(row int) Vector2 {
 	// Panel sits flush against the right edge: x range
-	// [1280-debugViewWidth, 1280]. Pick the middle.
-	panelMidX := 1280 - debugViewWidth/2
+	// [1280-DebugViewWidth, 1280]. Pick the middle.
+	panelMidX := 1280 - DebugViewWidth/2
 	// Pick a Y inside the row's band. The formula is
 	// (Y / rowHeight) - 1 == row, so Y must be in
 	// [(row+1)*rowHeight, (row+2)*rowHeight).

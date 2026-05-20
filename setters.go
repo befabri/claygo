@@ -5,11 +5,11 @@ package claygo
 // integration, and the EaseOut transition helper. These mirror the
 // upstream Clay_SetX* APIs verbatim (oracle/clay.h ~line 1016-1031).
 
-// SetMaxElementCount adjusts the maximum number of layout elements the
+// SetMaxElementCount adjusts the maximum number of layout elements this
 // Context can hold. Takes effect immediately — but because the arena has
 // already been carved at Initialize time, calling this above the original
-// budget will not reallocate. Callers who need a bigger budget should
-// Initialize with a larger arena, then call this.
+// budget will not reallocate. Use the package-level SetMaxElementCount before
+// MinMemorySize and Initialize when creating a larger context.
 //
 // Mirrors Clay_SetMaxElementCount (oracle/clay.h ~line 4909).
 func (c *Context) SetMaxElementCount(n int32) { c.maxElementCount = n }
@@ -30,9 +30,10 @@ func (c *Context) SetMaxMeasureTextCacheWordCount(n int32) { c.maxMeasureTextCac
 func (c *Context) MaxMeasureTextCacheWordCount() int32 { return c.maxMeasureTextCacheWordCount }
 
 // ResetMeasureTextCache clears every entry in the text-measurement cache.
-// Call after the user changes a font file or otherwise invalidates the
-// previous text measurements. Pointers handed out by GetScrollContainerData
-// or previous measureTextCached calls become stale.
+// Call after the user changes a font file or otherwise invalidates previous
+// text measurements (e.g. font reload, DPI change). Safe to call between
+// frames; calling mid-frame produces inconsistent measurements as the
+// solver pulls from the cache.
 //
 // Mirrors Clay_ResetMeasureTextCache (oracle/clay.h ~line 4936).
 func (c *Context) ResetMeasureTextCache() {

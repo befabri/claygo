@@ -618,6 +618,205 @@ static Clay_RenderCommandArray scene_floating_parent(void) {
     return Clay_EndLayout(0.0f);
 }
 
+// border_between_children with TOP_TO_BOTTOM layout — verifies horizontal
+// divider rectangles spanning content width at gaps between siblings.
+// Mirror of border_between_children but column-direction.
+static Clay_RenderCommandArray scene_border_between_children_col(void) {
+    Clay_BeginLayout();
+    CLAY_AUTO_ID({
+        .layout = {
+            .sizing = { CLAY_SIZING_FIXED(80), CLAY_SIZING_FIT(0) },
+            .padding = CLAY_PADDING_ALL(8),
+            .childGap = 8,
+            .layoutDirection = CLAY_TOP_TO_BOTTOM,
+        },
+        .backgroundColor = { 30, 30, 36, 255 },
+        .border = {
+            .color = { 240, 200, 80, 255 },
+            .width = { .betweenChildren = 2 },
+        },
+    }) {
+        CLAY_AUTO_ID({ .layout = { .sizing = { CLAY_SIZING_FIXED(60), CLAY_SIZING_FIXED(40) } },
+               .backgroundColor = { 200, 80, 80, 255 } });
+        CLAY_AUTO_ID({ .layout = { .sizing = { CLAY_SIZING_FIXED(60), CLAY_SIZING_FIXED(40) } },
+               .backgroundColor = { 80, 200, 80, 255 } });
+        CLAY_AUTO_ID({ .layout = { .sizing = { CLAY_SIZING_FIXED(60), CLAY_SIZING_FIXED(40) } },
+               .backgroundColor = { 80, 80, 200, 255 } });
+    }
+    return Clay_EndLayout(0.0f);
+}
+
+// Text wrapping with TextAlignment=CENTER. Each line's x is centered
+// within the container's inner width. Verifies alignment offset math.
+static Clay_RenderCommandArray scene_text_align_center(void) {
+    Clay_BeginLayout();
+    CLAY_AUTO_ID({
+        .layout = {
+            .sizing = { CLAY_SIZING_FIXED(200), CLAY_SIZING_FIT(0) },
+            .padding = CLAY_PADDING_ALL(8),
+        },
+        .backgroundColor = { 30, 30, 36, 255 },
+    }) {
+        CLAY_TEXT(CLAY_STRING("The quick brown fox jumps over the lazy dog"),
+            CLAY_TEXT_CONFIG({
+                .textColor = { 240, 240, 240, 255 },
+                .fontSize = 16,
+                .wrapMode = CLAY_TEXT_WRAP_WORDS,
+                .textAlignment = CLAY_TEXT_ALIGN_CENTER,
+            }));
+    }
+    return Clay_EndLayout(0.0f);
+}
+
+// Text wrapping with TextAlignment=RIGHT. Each line's x is offset to align
+// the right edge of the line text with the right edge of the container.
+static Clay_RenderCommandArray scene_text_align_right(void) {
+    Clay_BeginLayout();
+    CLAY_AUTO_ID({
+        .layout = {
+            .sizing = { CLAY_SIZING_FIXED(200), CLAY_SIZING_FIT(0) },
+            .padding = CLAY_PADDING_ALL(8),
+        },
+        .backgroundColor = { 30, 30, 36, 255 },
+    }) {
+        CLAY_TEXT(CLAY_STRING("The quick brown fox jumps over the lazy dog"),
+            CLAY_TEXT_CONFIG({
+                .textColor = { 240, 240, 240, 255 },
+                .fontSize = 16,
+                .wrapMode = CLAY_TEXT_WRAP_WORDS,
+                .textAlignment = CLAY_TEXT_ALIGN_RIGHT,
+            }));
+    }
+    return Clay_EndLayout(0.0f);
+}
+
+// Two floating siblings with explicit Z indices. The z=1 root renders
+// after the z=2 root in declaration order, but after the bubble sort
+// by zIndex the z=1 commands appear before the z=2 commands in the
+// output. Pins the tree-root z-sort comparator.
+static Clay_RenderCommandArray scene_floating_z_sort(void) {
+    Clay_BeginLayout();
+    CLAY(CLAY_ID("AnchorZ"), {
+        .layout = { .sizing = { CLAY_SIZING_FIXED(300), CLAY_SIZING_FIXED(200) } },
+        .backgroundColor = { 30, 30, 36, 255 },
+    }) {
+        // First declared, but zIndex=2 → renders LAST in output.
+        CLAY_AUTO_ID({
+            .layout = { .sizing = { CLAY_SIZING_FIXED(80), CLAY_SIZING_FIXED(60) } },
+            .backgroundColor = { 200, 80, 80, 255 },
+            .floating = {
+                .zIndex = 2,
+                .attachTo = CLAY_ATTACH_TO_PARENT,
+                .attachPoints = { .parent = CLAY_ATTACH_POINT_LEFT_TOP, .element = CLAY_ATTACH_POINT_LEFT_TOP },
+            },
+        });
+        // Second declared, but zIndex=1 → renders BEFORE the red.
+        CLAY_AUTO_ID({
+            .layout = { .sizing = { CLAY_SIZING_FIXED(80), CLAY_SIZING_FIXED(60) } },
+            .backgroundColor = { 80, 200, 80, 255 },
+            .floating = {
+                .zIndex = 1,
+                .attachTo = CLAY_ATTACH_TO_PARENT,
+                .attachPoints = { .parent = CLAY_ATTACH_POINT_LEFT_TOP, .element = CLAY_ATTACH_POINT_LEFT_TOP },
+                .offset = { 100, 0 },
+            },
+        });
+    }
+    return Clay_EndLayout(0.0f);
+}
+
+// Clip container with a non-zero ChildOffset — children should be
+// translated by the offset inside the SCISSOR pair. Verifies
+// Clip.ChildOffset arithmetic.
+static Clay_RenderCommandArray scene_clip_scroll_offset(void) {
+    Clay_BeginLayout();
+    CLAY_AUTO_ID({
+        .layout = { .sizing = { CLAY_SIZING_FIXED(120), CLAY_SIZING_FIXED(80) } },
+        .backgroundColor = { 30, 30, 36, 255 },
+        .clip = {
+            .horizontal = true,
+            .vertical = true,
+            .childOffset = { -20, -10 },
+        },
+    }) {
+        CLAY_AUTO_ID({
+            .layout = { .sizing = { CLAY_SIZING_FIXED(200), CLAY_SIZING_FIXED(150) } },
+            .backgroundColor = { 200, 80, 80, 255 },
+        });
+    }
+    return Clay_EndLayout(0.0f);
+}
+
+// Floating element nested inside a clip parent. The floating element
+// becomes its own tree root that inherits the clip ancestor and emits
+// SCISSOR_START/END around its subtree to mask against the clip's bbox.
+static Clay_RenderCommandArray scene_floating_in_clip(void) {
+    Clay_BeginLayout();
+    CLAY(CLAY_ID("ClipParent"), {
+        .layout = { .sizing = { CLAY_SIZING_FIXED(200), CLAY_SIZING_FIXED(150) } },
+        .backgroundColor = { 30, 30, 36, 255 },
+        .clip = { .horizontal = true, .vertical = true },
+    }) {
+        // Floating child stays clipped to the parent because clipTo defaults
+        // to CLAY_CLIP_TO_NONE in upstream — to inherit the clip ancestor we
+        // explicitly set CLAY_CLIP_TO_ATTACHED_PARENT.
+        CLAY_AUTO_ID({
+            .layout = { .sizing = { CLAY_SIZING_FIXED(80), CLAY_SIZING_FIXED(60) } },
+            .backgroundColor = { 200, 80, 80, 255 },
+            .floating = {
+                .attachTo = CLAY_ATTACH_TO_PARENT,
+                .attachPoints = { .parent = CLAY_ATTACH_POINT_LEFT_TOP, .element = CLAY_ATTACH_POINT_LEFT_TOP },
+                .clipTo = CLAY_CLIP_TO_ATTACHED_PARENT,
+                .offset = { 10, 10 },
+            },
+        });
+    }
+    return Clay_EndLayout(0.0f);
+}
+
+// Text wrap inside a clip container — the wrap pass runs first, then the
+// scissor wraps each TEXT command. Exercises the wrap × scissor interaction.
+static Clay_RenderCommandArray scene_clip_text_wrap(void) {
+    Clay_BeginLayout();
+    CLAY_AUTO_ID({
+        .layout = {
+            .sizing = { CLAY_SIZING_FIXED(160), CLAY_SIZING_FIXED(40) },
+            .padding = CLAY_PADDING_ALL(4),
+        },
+        .backgroundColor = { 30, 30, 36, 255 },
+        .clip = { .horizontal = true, .vertical = true },
+    }) {
+        CLAY_TEXT(CLAY_STRING("The quick brown fox jumps over the lazy dog"),
+            CLAY_TEXT_CONFIG({
+                .textColor = { 240, 240, 240, 255 },
+                .fontSize = 16,
+                .wrapMode = CLAY_TEXT_WRAP_WORDS,
+            }));
+    }
+    return Clay_EndLayout(0.0f);
+}
+
+// Element with image data + corner radius + border + overlay — exercises
+// the full set of render commands in one element. The Go port must emit
+// in order: OVERLAY_COLOR_START, IMAGE, RECTANGLE (background), BORDER,
+// OVERLAY_COLOR_END.
+static Clay_RenderCommandArray scene_image_full_stack(void) {
+    Clay_BeginLayout();
+    static int fake_image_data = 1;
+    CLAY_AUTO_ID({
+        .layout = { .sizing = { CLAY_SIZING_FIXED(200), CLAY_SIZING_FIXED(120) } },
+        .backgroundColor = { 255, 255, 255, 255 },
+        .overlayColor = { 0, 0, 255, 80 },
+        .cornerRadius = { 8, 8, 8, 8 },
+        .border = {
+            .color = { 240, 200, 80, 255 },
+            .width = { .left = 2, .right = 2, .top = 2, .bottom = 2 },
+        },
+        .image = { .imageData = &fake_image_data },
+    });
+    return Clay_EndLayout(0.0f);
+}
+
 // 7 GROW children sharing 1216 px (1280 - 16 padding - 6*8 gaps). 1216/7 is
 // non-integer, exercising whatever fractional layout policy Clay applies.
 static Clay_RenderCommandArray scene_grow_7_nonint(void) {
@@ -649,29 +848,37 @@ typedef struct {
 } Scene;
 
 static Scene SCENES[] = {
-    { "rect_solid",             scene_rect_solid             },
-    { "padded_rect",            scene_padded_rect            },
-    { "row_3_fixed",            scene_row_3_fixed            },
-    { "row_3_grow",             scene_row_3_grow             },
-    { "col_3_grow",             scene_col_3_grow             },
-    { "mixed_fixed_grow",       scene_mixed_fixed_grow       },
-    { "percent_half",           scene_percent_half           },
-    { "min_max_clamp",          scene_min_max_clamp          },
-    { "fit_to_children",        scene_fit_to_children        },
-    { "align_center",           scene_align_center           },
-    { "align_right_bottom",     scene_align_right_bottom     },
-    { "text_simple",            scene_text_simple            },
-    { "corner_radius",          scene_corner_radius          },
-    { "border_basic",           scene_border_basic           },
-    { "border_between_children",scene_border_between_children},
-    { "overlay_color",          scene_overlay_color          },
-    { "image_basic",            scene_image_basic            },
-    { "text_wrap_words",        scene_text_wrap_words        },
-    { "aspect_ratio",           scene_aspect_ratio           },
-    { "nested_3_levels",        scene_nested_3_levels        },
-    { "clip_overflow",          scene_clip_overflow          },
-    { "floating_parent",        scene_floating_parent        },
-    { "grow_7_nonint",          scene_grow_7_nonint          },
+    { "rect_solid",                 scene_rect_solid                 },
+    { "padded_rect",                scene_padded_rect                },
+    { "row_3_fixed",                scene_row_3_fixed                },
+    { "row_3_grow",                 scene_row_3_grow                 },
+    { "col_3_grow",                 scene_col_3_grow                 },
+    { "mixed_fixed_grow",           scene_mixed_fixed_grow           },
+    { "percent_half",               scene_percent_half               },
+    { "min_max_clamp",              scene_min_max_clamp              },
+    { "fit_to_children",            scene_fit_to_children            },
+    { "align_center",               scene_align_center               },
+    { "align_right_bottom",         scene_align_right_bottom         },
+    { "text_simple",                scene_text_simple                },
+    { "corner_radius",              scene_corner_radius              },
+    { "border_basic",               scene_border_basic               },
+    { "border_between_children",    scene_border_between_children    },
+    { "border_between_children_col",scene_border_between_children_col},
+    { "overlay_color",              scene_overlay_color              },
+    { "image_basic",                scene_image_basic                },
+    { "image_full_stack",           scene_image_full_stack           },
+    { "text_wrap_words",            scene_text_wrap_words            },
+    { "text_align_center",          scene_text_align_center          },
+    { "text_align_right",           scene_text_align_right           },
+    { "aspect_ratio",               scene_aspect_ratio               },
+    { "nested_3_levels",            scene_nested_3_levels            },
+    { "clip_overflow",              scene_clip_overflow              },
+    { "clip_scroll_offset",         scene_clip_scroll_offset         },
+    { "clip_text_wrap",             scene_clip_text_wrap             },
+    { "floating_parent",            scene_floating_parent            },
+    { "floating_z_sort",            scene_floating_z_sort            },
+    { "floating_in_clip",           scene_floating_in_clip           },
+    { "grow_7_nonint",              scene_grow_7_nonint              },
 };
 static const int SCENE_COUNT = (int)(sizeof(SCENES) / sizeof(SCENES[0]));
 

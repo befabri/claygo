@@ -5,6 +5,14 @@ package claygo
 // calls, so any Box/Text invocations inside it become this element's
 // children.
 //
+// The auto-generated id is `HashNumber(parent.Children.Length, parent.ID)`,
+// derived from the element's position in its parent. This is stable across
+// re-declarations of the same tree, but if you reorder siblings between
+// frames (for example, items in a loop without a stable key), each slot keeps
+// its position-derived id while the contents change. Hover state and
+// transitions then attach to the position, not the item. Inside loops over
+// dynamic data, prefer BoxIDOffset(c, name, uint32(i), ...).
+//
 // Example:
 //
 //	claygo.Box(ctx, claygo.Decl{
@@ -54,6 +62,10 @@ func BoxIDOffset(c *Context, id string, offset uint32, decl Decl, children func(
 
 // Text declares a text element. Text elements are leaves and cannot have
 // children.
+//
+// Requires Context.SetMeasureTextFunction to have been installed; otherwise
+// the leaf measures as 0×0 and the configured ErrorHandler receives
+// ErrorTypeTextMeasurementFunctionNotProvided once per Context lifetime.
 func Text(c *Context, s string, cfg TextElementConfig) {
 	c.openTextElement(s, cfg)
 }

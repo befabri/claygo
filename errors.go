@@ -8,7 +8,13 @@ type ErrorData struct {
 	UserData any
 }
 
-// ErrorHandler is the user-provided error reporting hook. Func is required.
+// ErrorHandler is the user-provided error reporting hook.
+//
+// Func MUST be set, otherwise every error claygo detects is silently
+// dropped (no panic, no log). A reasonable minimum is to forward to log.Println
+// during development:
+//
+//	ErrorHandler{Func: func(e claygo.ErrorData) { log.Printf("[clay] %s: %s", e.Type, e.Text) }}
 type ErrorHandler struct {
 	Func     func(err ErrorData)
 	UserData any
