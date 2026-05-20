@@ -110,9 +110,14 @@ func (a *Array[T]) SetDontTouchLength(i int32, value T) *T {
 // or the zero value if i is out of range.
 func (a *Array[T]) RemoveSwapback(i int32) T {
 	if rangeCheck(i, a.Length) {
-		a.Length--
 		removed := a.Data[i]
-		a.Data[i] = a.Data[a.Length]
+		last := a.Length - 1
+		if i != last {
+			a.Data[i] = a.Data[last]
+		}
+		var zero T
+		a.Data[last] = zero
+		a.Length = last
 		return removed
 	}
 	return a.zero

@@ -54,17 +54,6 @@ func (c *Context) SetPointerState(pos Vector2, isDown bool) {
 		}
 	}
 
-	// Fire OnHover callbacks before transitioning press/release state, matching
-	// Clay_SetPointerState's callback ordering.
-	for i := int32(0); i < c.pointerOverIds.Length; i++ {
-		id := c.pointerOverIds.GetValue(i)
-		item := c.getHashMapItem(id.ID)
-		if item == nil || item.OnHoverFunction == nil {
-			continue
-		}
-		item.OnHoverFunction(id, c.pointerData, item.HoverFunctionUserData)
-	}
-
 	// Transition the press/release state machine.
 	prev := c.pointerData.State
 	switch {
@@ -109,6 +98,9 @@ func (c *Context) collectPointerOver(rootIdx int32) bool {
 			}
 		}
 		if pointIsInsideRect(c.pointerPosition, item.BoundingBox) && clipAllowsHit {
+			if item.OnHoverFunction != nil {
+				item.OnHoverFunction(item.ElementID, c.pointerData, item.HoverFunctionUserData)
+			}
 			c.pointerOverIds.Add(item.ElementID)
 			found = true
 		}

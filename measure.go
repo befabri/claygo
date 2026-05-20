@@ -170,7 +170,7 @@ func (c *Context) measureTextCached(text string, cfg *TextElementConfig) *Measur
 	} else {
 		if c.measureTextHashMapInternal.Length == c.measureTextHashMapInternal.Capacity-1 {
 			if !c.warnMaxTextMeasureCacheExceeded {
-				c.reportError(ErrorTypeTextMeasurementCapacityExceeded,
+				c.reportError(ErrorTypeElementsCapacityExceeded,
 					"Clay ran out of capacity while attempting to measure text elements. Try using SetMaxElementCount() with a higher value.")
 				c.warnMaxTextMeasureCacheExceeded = true
 			}

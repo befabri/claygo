@@ -730,9 +730,13 @@ func TestCurrentContextLowLevelAPIs(t *testing.T) {
 	if RenderCommandArray_Get(&cmds, 0) == nil {
 		t.Fatalf("RenderCommandArray_Get returned nil for first command")
 	}
-	ctx.SetPointerState(Vector2{X: 1, Y: 2}, false)
-	if got := ctx.GetPointerState().Position; got != (Vector2{X: 1, Y: 2}) {
-		t.Fatalf("ctx.GetPointerState position = %v, want {1 2}", got)
+	SetPointerState(Vector2{X: 1, Y: 2}, false)
+	if got := GetPointerState().Position; got != (Vector2{X: 1, Y: 2}) {
+		t.Fatalf("GetPointerState position = %v, want {1 2}", got)
+	}
+	SetCurrentContext(nil)
+	if got := GetPointerState(); got != (PointerData{}) {
+		t.Fatalf("nil-current GetPointerState = %+v, want zero", got)
 	}
 }
 
@@ -817,7 +821,7 @@ func TestSetLayoutDimensionsUpdatesRootResizedImmediately(t *testing.T) {
 	}
 }
 
-func TestMeasureTextEntryCapacityReportsTextMeasurementError(t *testing.T) {
+func TestMeasureTextEntryCapacityReportsElementsCapacityError(t *testing.T) {
 	var errs []ErrorData
 	mem := make([]byte, MinMemorySize())
 	ctx := Initialize(CreateArenaWithCapacityAndMemory(uint(len(mem)), mem), Dimensions{Width: 100, Height: 100}, ErrorHandler{
@@ -826,6 +830,23 @@ func TestMeasureTextEntryCapacityReportsTextMeasurementError(t *testing.T) {
 	ctx.SetMeasureTextFunction(deterministicMeasureTextForTest, nil)
 	ctx.measureTextHashMapInternal.Length = ctx.measureTextHashMapInternal.Capacity - 1
 	ctx.measureTextCached("hello", &TextElementConfig{FontSize: 12})
+	if len(errs) != 1 {
+		t.Fatalf("error count = %d, want 1", len(errs))
+	}
+	if errs[0].Type != ErrorTypeElementsCapacityExceeded {
+		t.Fatalf("error type = %d, want elements capacity", errs[0].Type)
+	}
+}
+
+func TestMeasuredWordsCapacityReportsTextMeasurementError(t *testing.T) {
+	var errs []ErrorData
+	mem := make([]byte, MinMemorySize())
+	ctx := Initialize(CreateArenaWithCapacityAndMemory(uint(len(mem)), mem), Dimensions{Width: 100, Height: 100}, ErrorHandler{
+		Func: func(err ErrorData) { errs = append(errs, err) },
+	})
+	ctx.SetMeasureTextFunction(deterministicMeasureTextForTest, nil)
+	ctx.measuredWords.Length = ctx.measuredWords.Capacity - 1
+	ctx.measureTextCached("hello world", &TextElementConfig{FontSize: 12})
 	if len(errs) != 1 {
 		t.Fatalf("error count = %d, want 1", len(errs))
 	}
@@ -889,16 +910,24 @@ func TestFloatingClipSyntheticCommandsMatchOracleFields(t *testing.T) {
 	cmds := ctx.EndLayout(0).Commands
 
 	floatingID := GetElementID("FloatingRenderParity").ID
+	syntheticStartID := HashNumber(floatingID, 12).ID
+	syntheticEndID := HashNumber(floatingID, 13).ID
 	borderID := HashNumber(2, floatingID).ID
 	dividerID := HashNumber(4, floatingID).ID
 	foundSyntheticScissorStart := false
 	foundBorder := false
 	foundDivider := false
-	foundScissorEnd := false
+	syntheticScissorEndCount := 0
 	for _, cmd := range cmds {
 		switch {
-		case cmd.CommandType == RenderCommandTypeScissorStart && cmd.ID != floatingID && cmd.ZIndex == 7:
+		case cmd.CommandType == RenderCommandTypeScissorStart && cmd.ID == syntheticStartID:
 			foundSyntheticScissorStart = true
+			if cmd.BoundingBox != (BoundingBox{X: 0, Y: 0, Width: 100, Height: 100}) {
+				t.Fatalf("synthetic floating clip scissor bbox = %v, want clip owner bbox", cmd.BoundingBox)
+			}
+			if cmd.ZIndex != 7 {
+				t.Fatalf("synthetic floating clip scissor zIndex = %d, want 7", cmd.ZIndex)
+			}
 			if cmd.UserData != nil {
 				t.Fatalf("synthetic floating clip scissor userData = %v, want nil", cmd.UserData)
 			}
@@ -912,15 +941,15 @@ func TestFloatingClipSyntheticCommandsMatchOracleFields(t *testing.T) {
 			if cmd.ZIndex != 0 {
 				t.Fatalf("between-child divider zIndex = %d, want 0", cmd.ZIndex)
 			}
-		case cmd.CommandType == RenderCommandTypeScissorEnd:
-			foundScissorEnd = true
+		case cmd.CommandType == RenderCommandTypeScissorEnd && cmd.ID == syntheticEndID:
+			syntheticScissorEndCount++
 			if cmd.ZIndex != 0 {
 				t.Fatalf("scissor end zIndex = %d, want 0", cmd.ZIndex)
 			}
 		}
 	}
-	if !foundSyntheticScissorStart || !foundBorder || !foundDivider || !foundScissorEnd {
-		t.Fatalf("missing expected commands: syntheticScissor=%v border=%v divider=%v scissorEnd=%v", foundSyntheticScissorStart, foundBorder, foundDivider, foundScissorEnd)
+	if !foundSyntheticScissorStart || !foundBorder || !foundDivider || syntheticScissorEndCount != 2 {
+		t.Fatalf("missing expected commands: syntheticScissor=%v border=%v divider=%v scissorEndCount=%d", foundSyntheticScissorStart, foundBorder, foundDivider, syntheticScissorEndCount)
 	}
 }
 

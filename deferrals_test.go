@@ -31,8 +31,8 @@ func TestRootResizedLastFrameDetectsResize(t *testing.T) {
 	}
 	ctx.EndLayout(0)
 
-	// Frame 4 — caller reports the unchanged viewport, so the flag drops.
-	ctx.SetLayoutDimensions(Dimensions{Width: 800, Height: 600})
+	// Frame 4 — without another SetLayoutDimensions call, the one-frame resize
+	// marker should already be consumed.
 	ctx.BeginLayout()
 	if ctx.RootResizedLastFrame() {
 		t.Errorf("frame after resize: expected RootResizedLastFrame=false")

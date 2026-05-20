@@ -427,10 +427,13 @@ func (c *Context) EndLayout(deltaTime float32) RenderCommandArray {
 		result := c.calculateFinalLayout(deltaTime)
 		c.useStoredBoundingBoxes = false
 		c.snapshotTransitionElements()
+		c.rootResizedLastFrame = false
 		return result
 	}
 
-	return c.calculateFinalLayout(deltaTime)
+	result := c.calculateFinalLayout(deltaTime)
+	c.rootResizedLastFrame = false
+	return result
 }
 
 // SetDebugModeEnabled toggles Clay's built-in debug overlay (a side panel

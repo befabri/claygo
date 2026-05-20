@@ -145,6 +145,7 @@ func TestOnHoverReceivesPreTransitionPointerState(t *testing.T) {
 	if got := ctx.PointerState().State; got != PointerDataReleased {
 		t.Fatalf("setup pointer state = %d, want released", got)
 	}
+	called = false
 	ctx.SetPointerState(Vector2{X: 10, Y: 10}, true)
 	if !called {
 		t.Fatalf("OnHover callback was not called")
@@ -154,6 +155,37 @@ func TestOnHoverReceivesPreTransitionPointerState(t *testing.T) {
 	}
 	if got := ctx.PointerState().State; got != PointerDataPressedThisFrame {
 		t.Fatalf("post-call pointer state = %d, want pressed-this-frame", got)
+	}
+}
+
+func TestOnHoverFiresBeforeAddingCurrentPointerOverID(t *testing.T) {
+	ctx := freshContext(t)
+	targetID := GetElementID("HoverOrderTarget")
+	var pointerOverDuringCallback bool
+	var idsDuringCallback []ElementID
+	ctx.BeginLayout()
+	BoxID(ctx, "HoverOrderTarget", Decl{
+		Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(80), Height: SizingFixed(20)}},
+	}, func() {
+		ctx.OnHover(func(id ElementID, _ PointerData, _ any) {
+			if id.ID != targetID.ID {
+				t.Fatalf("callback id = %d, want %d", id.ID, targetID.ID)
+			}
+			pointerOverDuringCallback = ctx.PointerOver(targetID)
+			idsDuringCallback = append([]ElementID(nil), ctx.GetPointerOverIds()...)
+		}, nil)
+	})
+	ctx.EndLayout(0)
+
+	ctx.SetPointerState(Vector2{X: 10, Y: 10}, false)
+	if pointerOverDuringCallback {
+		t.Fatalf("PointerOver(target) was true inside OnHover before target id should be appended")
+	}
+	if hasElementID(idsDuringCallback, targetID.ID) {
+		t.Fatalf("target id was present inside callback pointer-over snapshot: %v", idsDuringCallback)
+	}
+	if !ctx.PointerOver(targetID) {
+		t.Fatalf("PointerOver(target) after SetPointerState = false, want true")
 	}
 }
 

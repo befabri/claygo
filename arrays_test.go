@@ -431,6 +431,48 @@ func TestArrayDataUsesTypedGoSliceNotArenaBytes(t *testing.T) {
 	}
 }
 
+func TestArrayRemoveSwapbackClearsRemovedTailSlots(t *testing.T) {
+	arena := newTestArena(t, 4096)
+	arr := NewArray[pointerStruct](3, arena)
+	a, b, c := 1, 2, 3
+	arr.Add(pointerStruct{Text: "a", Data: []int{1}, Next: &a})
+	arr.Add(pointerStruct{Text: "b", Data: []int{2}, Next: &b})
+	arr.Add(pointerStruct{Text: "c", Data: []int{3}, Next: &c})
+
+	removed := arr.RemoveSwapback(1)
+	if removed.Text != "b" || removed.Next != &b {
+		t.Fatalf("removed middle = %+v, want b", removed)
+	}
+	if arr.Length != 2 {
+		t.Fatalf("length after middle remove = %d, want 2", arr.Length)
+	}
+	if arr.Data[1].Text != "c" || arr.Data[1].Next != &c {
+		t.Fatalf("middle slot = %+v, want moved c", arr.Data[1])
+	}
+	if arr.Data[2] != (pointerStruct{}) {
+		t.Fatalf("tail slot after middle remove = %+v, want zero", arr.Data[2])
+	}
+
+	removed = arr.RemoveSwapback(1)
+	if removed.Text != "c" || removed.Next != &c {
+		t.Fatalf("removed last = %+v, want c", removed)
+	}
+	if arr.Data[1] != (pointerStruct{}) {
+		t.Fatalf("tail slot after last remove = %+v, want zero", arr.Data[1])
+	}
+
+	removed = arr.RemoveSwapback(0)
+	if removed.Text != "a" || removed.Next != &a {
+		t.Fatalf("removed final = %+v, want a", removed)
+	}
+	if arr.Length != 0 {
+		t.Fatalf("length after final remove = %d, want 0", arr.Length)
+	}
+	if arr.Data[0] != (pointerStruct{}) {
+		t.Fatalf("slot after final remove = %+v, want zero", arr.Data[0])
+	}
+}
+
 func TestArrayZeroSentinelIsolation(t *testing.T) {
 	// Sentinels are per-Array so writes through one cannot leak to another.
 	arena := newTestArena(t, 4096)
