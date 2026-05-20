@@ -9,7 +9,7 @@ package claygo
 type LayoutElement struct {
 	// Children holds indices into Context.layoutElements for each child of
 	// this element, in declaration order. The slice header points into the
-	// arena-backed Context.layoutElementChildren buffer; the elements
+	// fixed-capacity Context.layoutElementChildren buffer; the elements
 	// themselves are not owned here. For text elements this is unused.
 	Children ArraySlice[int32]
 

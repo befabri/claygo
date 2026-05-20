@@ -8,13 +8,15 @@ import "unsafe"
 // Initialize update the defaults; after Initialize, MinMemorySize follows the
 // current Context's configured caps.
 //
-// Mirrors Clay_MinMemorySize (oracle/clay.h ~line 4026): we sum the exact
-// byte footprint of every Array allocated by Initialize (both persistent and
-// ephemeral) plus a small slack for alignment and future fields.
+// Mirrors Clay_MinMemorySize (oracle/clay.h ~line 4026): we sum the logical
+// byte footprint of every Array reserved by Initialize (both persistent and
+// ephemeral) plus a small slack for alignment and future fields. The arena is a
+// capacity budget; Array payloads live in typed Go slices so the GC can see Go
+// pointers stored in Clay structs.
 //
 // With the stock defaults (maxElementCount=8192, maxMeasureTextWordCacheSize=16384)
-// the foundation port lands at ~7.4 MB. The Go figure is higher than the
-// upstream C ~3.5 MB because LayoutElement carries the full Decl (with
+// the foundation port lands at ~7.4 MB. The Go capacity budget is higher than
+// the upstream C ~3.5 MB because LayoutElement carries the full Decl (with
 // transition-handler func pointers, image/custom interface fields, etc.)
 // inline rather than in a union with the text-leaf payload, and Clay's
 // RenderCommand is similarly fattened by `any` payload fields. Memory budgets
@@ -51,6 +53,7 @@ func minMemorySizeFor(maxElements, maxWords int32) uint {
 	persistent += sizeOfArray[MeasuredWord](maxWords)
 	persistent += sizeOfArray[scrollContainerDataInternal](maxElements)
 	persistent += sizeOfArray[transitionDataInternal](200)
+	persistent += sizeOfArray[ElementID](maxElements) // pointerOverIds
 
 	ephemeral := uintptr(0)
 	ephemeral += sizeOfArray[int32](maxElements)                 // layoutElementChildrenBuffer
@@ -61,7 +64,6 @@ func minMemorySizeFor(maxElements, maxWords int32) uint {
 	ephemeral += sizeOfArray[layoutElementTreeRoot](maxElements) // layoutElementTreeRoots
 	ephemeral += sizeOfArray[WrappedTextLine](maxElements)       // wrappedTextLines
 	ephemeral += sizeOfArray[int32](maxElements)                 // textElements
-	ephemeral += sizeOfArray[ElementID](maxElements)             // pointerOverIds
 	ephemeral += sizeOfArray[int32](maxElements)                 // openClipElementStack
 	ephemeral += sizeOfArray[int32](maxElements)                 // layoutElementClipElementIds
 
@@ -73,9 +75,9 @@ func minMemorySizeFor(maxElements, maxWords int32) uint {
 	return uint(persistent + ephemeral + slack)
 }
 
-// sizeOfArray returns the byte footprint of an Array[T] with n entries (the
-// payload only — Array headers themselves live on the Go heap, not in the
-// arena).
+// sizeOfArray returns the logical byte footprint reserved for an Array[T] with
+// n entries. Array payloads are typed Go slices, but the arena still enforces
+// the same capacity budget and soft-fail behavior as the C implementation.
 func sizeOfArray[T any](n int32) uintptr {
 	var zero T
 	return uintptr(n) * unsafe.Sizeof(zero)
@@ -112,28 +114,4 @@ func (a *Arena) allocBytes(size, align uintptr) []byte {
 	}
 	a.NextAllocation = end
 	return a.Memory[start:end]
-}
-
-// allocSliceOf reserves capacity for n elements of type T inside the arena
-// and returns it as a Go slice header backed by the arena bytes. Callers
-// retain the slice for the lifetime of the arena allocation.
-//
-// This is a low-level primitive used by the internal Context to lay out its
-// fixed-capacity arrays. Because the backing memory is owned by the caller's
-// byte slice, the returned slice does not introduce additional GC pressure.
-func allocSliceOf[T any](a *Arena, n int) []T {
-	if n == 0 {
-		// Zero-length request: return a non-nil empty slice so callers can
-		// distinguish "successful zero-cap allocation" from "arena exhausted".
-		// Skipping allocBytes also avoids dereferencing an empty backing slice.
-		return []T{}
-	}
-	var zero T
-	size := unsafe.Sizeof(zero)
-	align := unsafe.Alignof(zero)
-	raw := a.allocBytes(uintptr(n)*size, align)
-	if raw == nil {
-		return nil
-	}
-	return unsafe.Slice((*T)(unsafe.Pointer(&raw[0])), n)
 }

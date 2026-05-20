@@ -1,6 +1,9 @@
 package claygo
 
-import "testing"
+import (
+	"testing"
+	"unsafe"
+)
 
 // newTestArena returns a freshly-allocated arena of the given byte capacity.
 func newTestArena(t *testing.T, capacity uint) *Arena {
@@ -13,6 +16,12 @@ func newTestArena(t *testing.T, capacity uint) *Arena {
 type pointStruct struct {
 	X int32
 	Y int32
+}
+
+type pointerStruct struct {
+	Text string
+	Data any
+	Next *int
 }
 
 func TestArrayNewArrayCapacity(t *testing.T) {
@@ -393,6 +402,34 @@ func TestArrayArenaExhaustionSoftFail(t *testing.T) {
 	}
 	if v := arr.RemoveSwapback(0); v != 0 {
 		t.Errorf("RemoveSwapback on exhausted array = %d, want 0", v)
+	}
+}
+
+func TestArrayDataUsesTypedGoSliceNotArenaBytes(t *testing.T) {
+	mem := make([]byte, 4096)
+	arena := CreateArenaWithCapacityAndMemory(uint(len(mem)), mem)
+	arr := NewArray[pointerStruct](4, &arena)
+	if arr.Data == nil || len(arr.Data) != 4 {
+		t.Fatalf("NewArray returned Data len=%d, want 4", len(arr.Data))
+	}
+	if arena.NextAllocation == 0 {
+		t.Fatalf("NewArray did not reserve arena capacity")
+	}
+
+	arenaStart := uintptr(unsafe.Pointer(&mem[0]))
+	arenaEnd := arenaStart + uintptr(len(mem))
+	dataPtr := uintptr(unsafe.Pointer(&arr.Data[0]))
+	if dataPtr >= arenaStart && dataPtr < arenaEnd {
+		t.Fatalf("Array data is backed by arena bytes; pointer-bearing arrays must use typed Go memory")
+	}
+
+	value := 42
+	arr.Add(pointerStruct{Text: "hello", Data: []string{"world"}, Next: &value})
+	for i := 0; i < 10; i++ {
+		arr.Set(0, pointerStruct{Text: "again", Data: map[string]int{"x": i}, Next: &value})
+	}
+	if arr.GetValue(0).Next != &value {
+		t.Fatalf("stored pointer was not preserved")
 	}
 }
 

@@ -1,10 +1,12 @@
 package claygo
 
-// Array is a fixed-capacity, arena-backed slice. Mirrors Clay's
-// CLAY__ARRAY_DEFINE pattern: callers allocate via NewArray with a known
+import "unsafe"
+
+// Array is a fixed-capacity typed slice with arena-enforced capacity. Mirrors
+// Clay's CLAY__ARRAY_DEFINE pattern: callers allocate via NewArray with a known
 // capacity, then Add/Get/Set/RemoveSwapback at runtime. Out-of-range Get/Add
-// returns a pointer to a zero sentinel rather than panicking, matching the
-// C original's "soft fail" semantics so chained calls don't NPE.
+// returns a pointer to a zero sentinel rather than panicking, matching the C
+// original's "soft fail" semantics so chained calls don't NPE.
 type Array[T any] struct {
 	Capacity int32
 	Length   int32
@@ -12,21 +14,28 @@ type Array[T any] struct {
 	zero     T // returned by Get/Add when out of range; callers must not write through it on a failed lookup
 }
 
-// NewArray allocates space for capacity elements of T inside the arena and
-// returns an Array[T] backed by that memory. Returns a zero Array{} (with
-// nil Data) if the arena cannot satisfy the request — same soft-fail as C.
+// NewArray reserves space for capacity elements of T against the arena budget
+// and returns an Array[T] backed by a normal typed Go slice. Keeping the data in
+// typed slices is required for GC safety: many Clay structs contain Go pointers
+// (strings, interfaces, funcs), and storing them in a []byte arena would hide
+// those pointers from the collector when the arena is reused.
+//
+// Returns a zero Array{} (with nil Data) if the arena cannot satisfy the
+// reservation, preserving Clay's soft-fail capacity behavior.
 func NewArray[T any](capacity int32, arena *Arena) Array[T] {
 	if capacity < 0 {
 		return Array[T]{}
 	}
-	data := allocSliceOf[T](arena, int(capacity))
-	if data == nil {
-		return Array[T]{}
+	if arena != nil {
+		var zero T
+		if arena.allocBytes(uintptr(capacity)*unsafe.Sizeof(zero), unsafe.Alignof(zero)) == nil {
+			return Array[T]{}
+		}
 	}
 	return Array[T]{
 		Capacity: capacity,
 		Length:   0,
-		Data:     data,
+		Data:     make([]T, capacity),
 	}
 }
 
