@@ -3,10 +3,9 @@ package claygo
 // Context is the per-instance state of a Clay layout engine. Allocate via
 // Initialize and reuse across frames; do not copy.
 //
-// Mirrors Clay_Context from oracle/clay.h (~line 1327). The Go port leaves
-// out a handful of fields that belong to later port waves (transition data,
-// scroll containers, wrapped text lines, dynamic strings) — those have
-// TODO comments at their slot in the struct.
+// Mirrors Clay_Context from oracle/clay.h (~line 1327). The Go port keeps the
+// same persistent/ephemeral split but replaces some upstream scratch arrays
+// with ordinary Go slices during traversal.
 type Context struct {
 	// --- Configuration -----------------------------------------------------
 	arena                        Arena
@@ -109,9 +108,9 @@ type Context struct {
 	externalScrollHandlingEnabled bool
 
 	// --- Persistent (cross-frame) state ------------------------------------
-	layoutElementsHashMap          Array[int32]
-	layoutElementsHashMapInternal  Array[LayoutElementHashMapItem]
-	layoutElementsHashMapFreeList  Array[int32]
+	layoutElementsHashMap         Array[int32]
+	layoutElementsHashMapInternal Array[LayoutElementHashMapItem]
+	layoutElementsHashMapFreeList Array[int32]
 
 	measureTextHashMap                 Array[int32]
 	measureTextHashMapInternal         Array[MeasureTextCacheItem]
@@ -140,9 +139,9 @@ type Context struct {
 
 	// Boolean warnings: each is "fire the error once per Context lifetime".
 	// Mirrors Clay_BooleanWarnings in the C reference (subset).
-	warnHashMapCapacityExceeded      bool
-	warnMaxTextMeasureCacheExceeded  bool
-	warnMaxElementsExceeded          bool
+	warnHashMapCapacityExceeded       bool
+	warnMaxTextMeasureCacheExceeded   bool
+	warnMaxElementsExceeded           bool
 	warnTextMeasurementFunctionNotSet bool
 
 	// debugSelectedElementID is the id of the element the user clicked on in
@@ -158,9 +157,14 @@ type Context struct {
 	// trip through DebugData. Lazily allocated by ToggleDebugCollapsed.
 	debugCollapsed map[uint32]bool
 
+	// warnings is the per-frame debug-warning stream rendered by the debug
+	// inspector when no element is selected. warningsEnabled is disabled while
+	// the debug view declares its own UI so it doesn't report itself.
+	warnings        []ErrorData
+	warningsEnabled bool
+
 	// Genuinely-unported Clay_Context fields (everything else from upstream
-	// is implemented above; see the prior TODO sections in git history for
-	// the porting timeline):
+	// is implemented above):
 	//   - layoutElementIdStrings: pool of id strings for debug rendering.
 	//     The Go port reaches the hashmap items for names rather than
 	//     mirroring this pool. Add if debug-tool perf becomes an issue.
@@ -171,9 +175,6 @@ type Context struct {
 	//     uses per-call Go slices instead; equivalent behavior, less arena.
 	//   - exitingElementsLength / exitingElementsChildrenLength: replaced
 	//     by the high-index-region trick in cloneElementsWithExitTransition.
-	//   - warnings array + warningsEnabled: upstream's queued-error stream.
-	//     The Go port fires a single boolean per warning type (see warn*
-	//     fields above); the verbose queue is debug-only.
 }
 
 // layoutElementTreeRoot is one entry in Context.layoutElementTreeRoots:
@@ -187,9 +188,8 @@ type layoutElementTreeRoot struct {
 	// auto-root this is 0 (no parent). For a floating root it's the
 	// resolved parent's id (per AttachTo*).
 	ParentID uint32
-	// ClipElementID is the id of the enclosing clip container, or 0 if
-	// not inside one. Used to scissor a floating subtree to the clip's
-	// boundary. Reserved for the clip wave; today always 0.
+	// ClipElementID is the id of the enclosing clip container, or 0 if not
+	// inside one. Used to scissor a floating subtree to the clip's boundary.
 	ClipElementID uint32
 	// ZIndex controls the rendering order of this root relative to
 	// siblings. Lower z renders first.
@@ -199,14 +199,18 @@ type layoutElementTreeRoot struct {
 // reportError fires the user-supplied error handler with the given type and
 // text, falling back to a no-op if no handler is installed.
 func (c *Context) reportError(t ErrorType, text string) {
-	if c.errorHandler.Func == nil {
-		return
-	}
-	c.errorHandler.Func(ErrorData{
+	data := ErrorData{
 		Type:     t,
 		Text:     text,
 		UserData: c.errorHandler.UserData,
-	})
+	}
+	if c.warningsEnabled {
+		c.warnings = append(c.warnings, data)
+	}
+	if c.errorHandler.Func == nil {
+		return
+	}
+	c.errorHandler.Func(data)
 }
 
 // Initialize allocates and returns a Context backed by the caller-supplied
@@ -217,13 +221,20 @@ func (c *Context) reportError(t ErrorType, text string) {
 // The order of allocations matters: it determines the byte layout in the
 // arena, which affects MinMemorySize.
 func Initialize(arena Arena, layoutDimensions Dimensions, errorHandler ErrorHandler) *Context {
+	maxElements := defaultMaxElementCount
+	maxWords := defaultMaxMeasureTextWordCacheSize
+	if currentContext != nil {
+		maxElements = currentContext.maxElementCount
+		maxWords = currentContext.maxMeasureTextCacheWordCount
+	}
 	ctx := &Context{
 		arena:                        arena,
 		layoutDimensions:             layoutDimensions,
 		errorHandler:                 errorHandler,
-		maxElementCount:              defaultMaxElementCount,
-		maxMeasureTextCacheWordCount: defaultMaxMeasureTextWordCacheSize,
+		maxElementCount:              maxElements,
+		maxMeasureTextCacheWordCount: maxWords,
 		cullingEnabled:               true,
+		warningsEnabled:              true,
 		// Zero value of PointerDataInteractionState is PressedThisFrame; the
 		// state machine assumes Released as the initial "nothing pressed" state.
 		pointerData: PointerData{State: PointerDataReleased},
@@ -231,6 +242,7 @@ func Initialize(arena Arena, layoutDimensions Dimensions, errorHandler ErrorHand
 		// no resize event (rootResizedLastFrame == false).
 		previousLayoutDimensions: layoutDimensions,
 	}
+	SetCurrentContext(ctx)
 	ctx.initializePersistentMemory()
 	ctx.initializeEphemeralMemory()
 	// layoutElementsHashMap slots default to -1 ("empty bucket").
@@ -339,13 +351,15 @@ func (c *Context) BeginLayout() {
 	c.warnMaxTextMeasureCacheExceeded = false
 	c.warnMaxElementsExceeded = false
 	c.warnTextMeasurementFunctionNotSet = false
+	c.warnings = c.warnings[:0]
+	c.warningsEnabled = true
 
 	// Open the auto-root and configure it to span the viewport. When the
-	// debug overlay is enabled the root container shrinks by debugViewWidth
+	// debug overlay is enabled the root container shrinks by DebugViewWidth
 	// on the right to make room for the side panel; mirrors clay.h:4362-4364.
 	rootWidth := c.layoutDimensions.Width
 	if c.debugMode {
-		rootWidth -= debugViewWidth
+		rootWidth -= DebugViewWidth
 	}
 	c.openElementWithID(rootElementIDString)
 	c.configureOpenElement(Decl{
@@ -386,7 +400,9 @@ func (c *Context) EndLayout(deltaTime float32) RenderCommandArray {
 	// where Clay__RenderDebugView() is called just before the second
 	// Clay__CalculateFinalLayout. Inert when debugMode is false.
 	if c.debugMode {
+		c.warningsEnabled = false
 		c.renderDebugView()
+		c.warningsEnabled = true
 	}
 
 	// Transition handling. Order mirrors Clay_EndLayout (oracle/clay.h
@@ -419,6 +435,7 @@ func (c *Context) EndLayout(deltaTime float32) RenderCommandArray {
 		c.useStoredBoundingBoxes = true
 		result := c.calculateFinalLayout(deltaTime)
 		c.useStoredBoundingBoxes = false
+		c.snapshotTransitionElements()
 		return result
 	}
 

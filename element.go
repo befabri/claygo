@@ -4,13 +4,8 @@ import "math"
 
 // element.go ports Clay's element open/configure/close lifecycle from
 // oracle/clay.h. The functions here run during BeginLayout..EndLayout and
-// build the layoutElements tree that the sizing solver consumes.
-//
-// What is intentionally skipped (deferred to later port waves):
-//   - Floating-element attachment / tree roots / openClipElementStack.
-//   - Clip containers + scroll containers (Clay__ScrollContainerDataInternal).
-//   - Transition data tracking.
-// Each skip is marked with a TODO at the relevant branch.
+// build the layoutElements tree that the sizing solver consumes, including
+// floating roots, clip/scroll containers, and transition registration.
 
 // rootElementIDString is the static name used to seed the auto-created root
 // container's ElementID. Matches CLAY_ID("Clay__RootContainer") in upstream
@@ -51,11 +46,14 @@ func (c *Context) openElement() {
 // hashed ElementID (e.g. CLAY_ID("Foo")). Mirrors Clay__OpenElementWithId
 // (oracle/clay.h ~line 2064).
 func (c *Context) openElementWithID(id string) {
+	c.openElementWithElementID(HashString(String{Text: id}, 0))
+}
+
+func (c *Context) openElementWithElementID(elementID ElementID) {
 	if c.layoutElements.Length == c.layoutElements.Capacity-1 || c.warnMaxElementsExceeded {
 		c.warnMaxElementsExceeded = true
 		return
 	}
-	elementID := HashString(String{Text: id}, 0)
 	c.layoutElements.Add(LayoutElement{ID: elementID.ID})
 	newIdx := c.layoutElements.Length - 1
 	c.openLayoutElementStack.Add(newIdx)
@@ -133,8 +131,7 @@ func (c *Context) openTextElement(text string, cfg TextElementConfig) {
 }
 
 // configureOpenElement applies a declaration to the currently open element.
-// Mirrors Clay__ConfigureOpenElementPtr (oracle/clay.h ~line 2112). Floating,
-// clip, and transition handling are deferred to later waves.
+// Mirrors Clay__ConfigureOpenElementPtr (oracle/clay.h ~line 2112).
 func (c *Context) configureOpenElement(decl Decl) {
 	openLE := c.getOpenLayoutElement()
 	if openLE == nil {
@@ -171,7 +168,7 @@ func (c *Context) configureOpenElement(decl Decl) {
 				parentItem := c.getHashMapItem(floatingCfg.ParentID)
 				if parentItem == nil {
 					c.reportError(ErrorTypeFloatingContainerParentNotFound,
-						"A floating element was declared with a parentId, but no element with that ID was found.")
+						"A floating element was declared with a parentId, but no element with that ID was found this frame. The parent must be declared (via BoxID with that string id) earlier in the same frame, before the floating element opens.")
 				} else if parentItem.LayoutElement != nil {
 					// Find parent's index by pointer-walk; layoutElements is a
 					// slice and the LayoutElement* it stores is into it.
@@ -254,10 +251,12 @@ func (c *Context) closeElement() {
 		return
 	}
 	layoutCfg := &openLE.Config.Layout
+	elementHasClipHorizontal := openLE.Config.Clip.Horizontal
+	elementHasClipVertical := openLE.Config.Clip.Vertical
 
 	// Pop openClipElementStack for clip-owners or floating roots. Mirrors
 	// the C check at oracle/clay.h:1876.
-	if openLE.Config.Clip.Horizontal || openLE.Config.Clip.Vertical ||
+	if elementHasClipHorizontal || elementHasClipVertical ||
 		openLE.Config.Floating.AttachTo != AttachToNone {
 		if c.openClipElementStack.Length > 0 {
 			c.openClipElementStack.Length--
@@ -284,19 +283,20 @@ func (c *Context) closeElement() {
 			if child.Dimensions.Height+topBottomPadding > openLE.Dimensions.Height {
 				openLE.Dimensions.Height = child.Dimensions.Height + topBottomPadding
 			}
-			// Clip containers can shrink below their content, so their min
-			// doesn't accumulate from children. The Clip config branches are
-			// deferred to a later wave so neither flag is set yet; for now we
-			// treat all elements as non-clip.
-			openLE.MinDimensions.Width += child.MinDimensions.Width
-			if child.MinDimensions.Height+topBottomPadding > openLE.MinDimensions.Height {
+			// Clip containers can shrink below their content on clipped axes.
+			if !elementHasClipHorizontal {
+				openLE.MinDimensions.Width += child.MinDimensions.Width
+			}
+			if !elementHasClipVertical && child.MinDimensions.Height+topBottomPadding > openLE.MinDimensions.Height {
 				openLE.MinDimensions.Height = child.MinDimensions.Height + topBottomPadding
 			}
 			c.layoutElementChildren.Add(childIdx)
 		}
 		childGap := float32(maxInt32(childCount-1, 0)) * float32(layoutCfg.ChildGap)
 		openLE.Dimensions.Width += childGap
-		openLE.MinDimensions.Width += childGap
+		if !elementHasClipHorizontal {
+			openLE.MinDimensions.Width += childGap
+		}
 	} else if layoutCfg.LayoutDirection == TopToBottom {
 		openLE.Dimensions.Height = topBottomPadding
 		openLE.MinDimensions.Height = topBottomPadding
@@ -308,15 +308,19 @@ func (c *Context) closeElement() {
 			if child.Dimensions.Width+leftRightPadding > openLE.Dimensions.Width {
 				openLE.Dimensions.Width = child.Dimensions.Width + leftRightPadding
 			}
-			openLE.MinDimensions.Height += child.MinDimensions.Height
-			if child.MinDimensions.Width+leftRightPadding > openLE.MinDimensions.Width {
+			if !elementHasClipVertical {
+				openLE.MinDimensions.Height += child.MinDimensions.Height
+			}
+			if !elementHasClipHorizontal && child.MinDimensions.Width+leftRightPadding > openLE.MinDimensions.Width {
 				openLE.MinDimensions.Width = child.MinDimensions.Width + leftRightPadding
 			}
 			c.layoutElementChildren.Add(childIdx)
 		}
 		childGap := float32(maxInt32(childCount-1, 0)) * float32(layoutCfg.ChildGap)
 		openLE.Dimensions.Height += childGap
-		openLE.MinDimensions.Height += childGap
+		if !elementHasClipVertical {
+			openLE.MinDimensions.Height += childGap
+		}
 	}
 
 	// Children of this element have been committed; the parent's slice view

@@ -3,8 +3,10 @@ package claygo
 import "unsafe"
 
 // MinMemorySize returns the byte size of the arena that Initialize requires
-// at the current configured maximums (max element count, max measure-text
-// cache words).
+// for the current max-element and measure-text word-cache counts. Package-level
+// SetMaxElementCount / SetMaxMeasureTextCacheWordCount calls made before
+// Initialize update the defaults; after Initialize, MinMemorySize follows the
+// current Context's configured caps.
 //
 // Mirrors Clay_MinMemorySize (oracle/clay.h ~line 4026): we sum the exact
 // byte footprint of every Array allocated by Initialize (both persistent and
@@ -21,43 +23,52 @@ import "unsafe"
 // The slack term covers:
 //   - alignUp padding between heterogeneously-aligned allocations (~16 B per alloc)
 //   - 64 B cacheline alignment for the arena base
-//   - 4 * maxElementCount bytes of headroom for the structures later port
-//     waves will add (scroll containers, transitions, wrapped lines, id
-//     strings, dynamic strings, tree nodes, pointer-over ids, warnings).
+//   - 4 * maxElementCount bytes of headroom for small scratch structures and
+//     future upstream fields that are cheaper to budget for than to expose as
+//     a breaking MinMemorySize change.
 //
-// Keeping the figure conservatively large means callers don't need to
-// re-allocate when later waves expand the Context.
+// Keeping the figure conservatively large reduces churn when upstream grows
+// Context internals.
 func MinMemorySize() uint {
+	maxElements := defaultMaxElementCount
+	maxWords := defaultMaxMeasureTextWordCacheSize
+	if currentContext != nil {
+		maxElements = currentContext.maxElementCount
+		maxWords = currentContext.maxMeasureTextCacheWordCount
+	}
+	return minMemorySizeFor(maxElements, maxWords)
+}
+
+func minMemorySizeFor(maxElements, maxWords int32) uint {
 	persistent := uintptr(0)
-	persistent += sizeOfArray[LayoutElementHashMapItem](defaultMaxElementCount)
-	persistent += sizeOfArray[int32](defaultMaxElementCount)             // layoutElementsHashMap
-	persistent += sizeOfArray[int32](defaultMaxElementCount)             // layoutElementsHashMapFreeList
-	persistent += sizeOfArray[MeasureTextCacheItem](defaultMaxElementCount)
-	persistent += sizeOfArray[int32](defaultMaxElementCount)             // measureTextHashMapInternalFreeList
-	persistent += sizeOfArray[int32](defaultMaxMeasureTextWordCacheSize) // measuredWordsFreeList
-	persistent += sizeOfArray[int32](defaultMaxElementCount)             // measureTextHashMap
-	persistent += sizeOfArray[MeasuredWord](defaultMaxMeasureTextWordCacheSize)
-	persistent += sizeOfArray[scrollContainerDataInternal](defaultMaxElementCount)
+	persistent += sizeOfArray[LayoutElementHashMapItem](maxElements)
+	persistent += sizeOfArray[int32](maxElements) // layoutElementsHashMap
+	persistent += sizeOfArray[int32](maxElements) // layoutElementsHashMapFreeList
+	persistent += sizeOfArray[MeasureTextCacheItem](maxElements)
+	persistent += sizeOfArray[int32](maxElements) // measureTextHashMapInternalFreeList
+	persistent += sizeOfArray[int32](maxWords)    // measuredWordsFreeList
+	persistent += sizeOfArray[int32](maxElements) // measureTextHashMap
+	persistent += sizeOfArray[MeasuredWord](maxWords)
+	persistent += sizeOfArray[scrollContainerDataInternal](maxElements)
 	persistent += sizeOfArray[transitionDataInternal](200)
 
 	ephemeral := uintptr(0)
-	ephemeral += sizeOfArray[int32](defaultMaxElementCount)                  // layoutElementChildrenBuffer
-	ephemeral += sizeOfArray[LayoutElement](defaultMaxElementCount)          // layoutElements
-	ephemeral += sizeOfArray[int32](defaultMaxElementCount)                  // layoutElementChildren
-	ephemeral += sizeOfArray[int32](defaultMaxElementCount)                  // openLayoutElementStack
-	ephemeral += sizeOfArray[RenderCommand](defaultMaxElementCount)          // renderCommands
-	ephemeral += sizeOfArray[layoutElementTreeRoot](defaultMaxElementCount)  // layoutElementTreeRoots
-	ephemeral += sizeOfArray[WrappedTextLine](defaultMaxElementCount)        // wrappedTextLines
-	ephemeral += sizeOfArray[int32](defaultMaxElementCount)                  // textElements
-	ephemeral += sizeOfArray[ElementID](defaultMaxElementCount)              // pointerOverIds
-	ephemeral += sizeOfArray[int32](defaultMaxElementCount)                  // openClipElementStack
-	ephemeral += sizeOfArray[int32](defaultMaxElementCount)                  // layoutElementClipElementIds
+	ephemeral += sizeOfArray[int32](maxElements)                 // layoutElementChildrenBuffer
+	ephemeral += sizeOfArray[LayoutElement](maxElements)         // layoutElements
+	ephemeral += sizeOfArray[int32](maxElements)                 // layoutElementChildren
+	ephemeral += sizeOfArray[int32](maxElements)                 // openLayoutElementStack
+	ephemeral += sizeOfArray[RenderCommand](maxElements)         // renderCommands
+	ephemeral += sizeOfArray[layoutElementTreeRoot](maxElements) // layoutElementTreeRoots
+	ephemeral += sizeOfArray[WrappedTextLine](maxElements)       // wrappedTextLines
+	ephemeral += sizeOfArray[int32](maxElements)                 // textElements
+	ephemeral += sizeOfArray[ElementID](maxElements)             // pointerOverIds
+	ephemeral += sizeOfArray[int32](maxElements)                 // openClipElementStack
+	ephemeral += sizeOfArray[int32](maxElements)                 // layoutElementClipElementIds
 
 	// Slack: 64 B cacheline-align safety, 16 B per allocation for alignUp
-	// padding (currently 13 allocs), plus headroom for the structures the
-	// future waves will add (scroll containers, transitions, wrapped lines,
-	// id strings, dynamic strings, tree nodes, pointer-over ids, warnings).
-	slack := uintptr(64 + 16*16 + sizeOfArray[byte](defaultMaxElementCount*4))
+	// padding, plus headroom for small scratch structures and future upstream
+	// fields.
+	slack := uintptr(64 + 16*16 + sizeOfArray[byte](maxElements*4))
 
 	return uint(persistent + ephemeral + slack)
 }
@@ -70,7 +81,7 @@ func sizeOfArray[T any](n int32) uintptr {
 	return uintptr(n) * unsafe.Sizeof(zero)
 }
 
-const (
+var (
 	defaultMaxElementCount             int32 = 8192
 	defaultMaxMeasureTextWordCacheSize int32 = 16384
 )
@@ -102,10 +113,6 @@ func (a *Arena) allocBytes(size, align uintptr) []byte {
 	a.NextAllocation = end
 	return a.Memory[start:end]
 }
-
-// reset rewinds the arena bump pointer to zero. Used by the ephemeral memory
-// region between frames.
-func (a *Arena) reset() { a.NextAllocation = 0 }
 
 // allocSliceOf reserves capacity for n elements of type T inside the arena
 // and returns it as a Go slice header backed by the arena bytes. Callers

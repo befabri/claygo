@@ -38,11 +38,16 @@ func (c *Context) SetPointerState(pos Vector2, isDown bool) {
 	c.pointerOverIds.Length = 0
 
 	// Walk every tree root in REVERSE z-order so top-most elements appear
-	// first in the resulting list (matches C). For each tree root, BFS:
-	// add elements whose bbox contains the pointer.
+	// first in the resulting list (matches C). Capturing floating roots stop
+	// hit-testing lower roots; passthrough roots allow the scan to continue.
 	for i := c.layoutElementTreeRoots.Length - 1; i >= 0; i-- {
 		treeRoot := c.layoutElementTreeRoots.Get(i)
-		c.collectPointerOver(treeRoot.LayoutElementIndex)
+		found := c.collectPointerOver(treeRoot.LayoutElementIndex)
+		rootElement := c.layoutElements.Get(treeRoot.LayoutElementIndex)
+		if found && rootElement.Config.Floating.AttachTo != AttachToNone &&
+			rootElement.Config.Floating.PointerCaptureMode == PointerCaptureModeCapture {
+			break
+		}
 	}
 
 	// Transition the press/release state machine.
@@ -71,13 +76,13 @@ func (c *Context) SetPointerState(pos Vector2, isDown bool) {
 }
 
 // collectPointerOver does an iterative BFS from rootIdx, appending every
-// element whose bbox contains the pointer position to c.pointerOverIds.
-// Floating elements with PointerCaptureModePassthrough are skipped — the
-// pointer should fall through to whatever sits underneath.
-func (c *Context) collectPointerOver(rootIdx int32) {
+// element whose bbox contains the pointer position to c.pointerOverIds. It
+// returns true when any element in the tree was hit.
+func (c *Context) collectPointerOver(rootIdx int32) bool {
 	// Scratch stack reused across calls — uses Go slice rather than the
 	// arena buffers (which are still holding solver state at this point).
 	stack := []int32{rootIdx}
+	found := false
 	for len(stack) > 0 {
 		idx := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
@@ -86,14 +91,23 @@ func (c *Context) collectPointerOver(rootIdx int32) {
 		if item == nil {
 			continue
 		}
-		if !pointIsInsideRect(c.pointerPosition, item.BoundingBox) {
+		if c.skipPointerTree(element) {
 			continue
 		}
-		// Passthrough floating containers register a hit but don't block
-		// children below from also registering. (Both branches add the id;
-		// the difference is only the "block other tree-roots" behavior,
-		// which Clay handles separately via attach-mode bookkeeping.)
-		c.pointerOverIds.Add(item.ElementID)
+		clipElementID := int32(0)
+		if idx >= 0 && idx < c.layoutElementClipElementIds.Capacity {
+			clipElementID = c.layoutElementClipElementIds.Data[idx]
+		}
+		clipAllowsHit := clipElementID == 0 || c.externalScrollHandlingEnabled
+		if !clipAllowsHit {
+			if clipItem := c.getHashMapItem(uint32(clipElementID)); clipItem != nil {
+				clipAllowsHit = pointIsInsideRect(c.pointerPosition, clipItem.BoundingBox)
+			}
+		}
+		if pointIsInsideRect(c.pointerPosition, item.BoundingBox) && clipAllowsHit {
+			c.pointerOverIds.Add(item.ElementID)
+			found = true
+		}
 
 		// Descend into children. Order doesn't matter for hit-testing
 		// purposes; deeper hits land later in the list within a tree, and
@@ -102,6 +116,28 @@ func (c *Context) collectPointerOver(rootIdx int32) {
 			stack = append(stack, element.Children.Data[i])
 		}
 	}
+	return found
+}
+
+func (c *Context) skipPointerTree(element *LayoutElement) bool {
+	if element.IsTextElement || element.Config.Transition.Handler == nil {
+		return false
+	}
+	for i := int32(0); i < c.transitionDatas.Length; i++ {
+		data := c.transitionDatas.Get(i)
+		if data.ElementID != element.ID {
+			continue
+		}
+		switch element.Config.Transition.InteractionHandling {
+		case TransitionDisableInteractionsWhileTransitioningPosition:
+			return data.State == TransitionStateExiting ||
+				data.State == TransitionStateEntering ||
+				(data.State == TransitionStateTransitioning && data.ActiveProperties&TransitionPropertyPosition != 0)
+		case TransitionAllowInteractionsWhileTransitioningPosition:
+			return data.State == TransitionStateExiting
+		}
+	}
+	return false
 }
 
 // PointerState returns the current pointer position and interaction state.

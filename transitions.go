@@ -17,19 +17,13 @@ package claygo
 //   - The post-layout advance loop (Clay_EndLayout ~line 4588-4720) — see
 //     advanceTransitions.
 //
-// What's intentionally stubbed / simplified:
 //   - cloneElementsWithExitTransition: clones a removed element's entire
 //     subtree into the high end of the layoutElements / layoutElementChildren
-//     arenas, registers the cloned root as a new layoutElementTreeRoot, and
-//     marks every clone as Exiting=true so the final-layout pass renders one
-//     more frame of the subtree (driving the exit animation handler). The
-//     single-element case is handled the same way as multi-element subtrees.
-//     Mirrors Clay__CloneElementsWithExitTransition (oracle/clay.h ~line 4374)
-//     plus the subtree-clone step embedded in Clay_EndLayout
-//     (oracle/clay.h ~line 4505-4535).
-//   - rootResizedLastFrame: not yet tracked anywhere in the port, so the
-//     "skip transition if outer window resized" suppression is omitted. Has
-//     no effect on the tests below since they hold layout dimensions constant.
+//     arenas, reattaches non-floating clones to live parents according to
+//     exit.siblingOrdering, or registers floating/orphaned clones as tree
+//     roots. Mirrors Clay__CloneElementsWithExitTransition (oracle/clay.h
+//     ~line 4374) plus the subtree-clone step embedded in Clay_EndLayout
+//     (oracle/clay.h ~line 4505-4567).
 
 // maxTransitionDatas is the persistent capacity of Context.transitionDatas.
 // Matches upstream's hard-coded 200 (oracle/clay.h ~line 2252).
@@ -38,10 +32,14 @@ const maxTransitionDatas int32 = 200
 // transitionDataInternal is the per-element cross-frame transition state.
 // Mirrors Clay__TransitionDataInternal (oracle/clay.h ~line 1251).
 type transitionDataInternal struct {
-	InitialState              TransitionData
-	CurrentState              TransitionData
-	TargetState               TransitionData
-	ElementThisFrame          *LayoutElement
+	InitialState     TransitionData
+	CurrentState     TransitionData
+	TargetState      TransitionData
+	ElementThisFrame *LayoutElement
+	// ElementSnapshot keeps the last completed frame's element data outside the
+	// ephemeral layout arena, so exit transitions still clone the right element
+	// after BeginLayout reuses low-index slots for the next frame.
+	ElementSnapshot           LayoutElement
 	OldParentRelativePosition Vector2
 	ElementID                 uint32
 	ParentID                  uint32
@@ -211,10 +209,8 @@ func (c *Context) pruneDeadTransitions() {
 // markExitingElements scans the transition table after element close and
 // records the EXITING state for elements whose hashmap generation is stale
 // AND that have an exit transition configured. Mirrors the second loop in
-// Clay_EndLayout (oracle/clay.h ~line 4472-4577) but skips the C version's
-// subtree-cloning step. Our test scenes drive single-element exits so the
-// elementThisFrame pointer from the previous frame still references valid
-// LayoutElement storage until the next BeginLayout's arena reset.
+// Clay_EndLayout (oracle/clay.h ~line 4472-4577); clone/reparent work is
+// factored into cloneElementsWithExitTransition below.
 func (c *Context) markExitingElements() {
 	for i := int32(0); i < c.transitionDatas.Length; i++ {
 		data := c.transitionDatas.Get(i)
@@ -225,16 +221,36 @@ func (c *Context) markExitingElements() {
 		if item == nil || item.Generation > c.generation {
 			continue
 		}
+		if data.ElementSnapshot.ID == data.ElementID {
+			data.ElementThisFrame = &data.ElementSnapshot
+		}
+		if data.ElementThisFrame == nil {
+			// Nothing to drive — element was never registered, just drop.
+			c.transitionDatas.RemoveSwapback(i)
+			i--
+			continue
+		}
+		cfg := &data.ElementThisFrame.Config.Transition
+		parentItem := c.getHashMapItem(data.ParentID)
+		parentAlive := parentItem != nil && parentItem.Generation > c.generation
+		parentWillExit := c.transitionDataWillExit(data.ParentID)
+		if cfg.Exit.Trigger != TransitionExitTriggerWhenParentExits && parentItem != nil && !parentAlive && !parentWillExit {
+			// Parent exited too and the default behavior is to skip child exits.
+			c.transitionDatas.RemoveSwapback(i)
+			i--
+			continue
+		}
 		// Element exited this frame. If we haven't already entered EXITING,
 		// stamp the initial state and let the advance loop drive the rest.
 		if data.State != TransitionStateExiting {
-			if data.ElementThisFrame == nil {
-				// Nothing to drive — element was never registered, just drop.
-				c.transitionDatas.RemoveSwapback(i)
-				i--
-				continue
+			if !parentAlive && !parentWillExit {
+				rootContainerID := HashString(String{Text: rootElementIDString}, 0).ID
+				data.ElementThisFrame.Config.Floating.AttachTo = AttachToRoot
+				data.ElementThisFrame.Config.Floating.Offset = Vector2{X: item.BoundingBox.X, Y: item.BoundingBox.Y}
+				data.ElementThisFrame.Config.Floating.ParentID = rootContainerID
 			}
-			cfg := &data.ElementThisFrame.Config.Transition
+			item.AppearedThisFrame = false
+			data.ElementThisFrame.Exiting = true
 			data.State = TransitionStateExiting
 			data.ActiveProperties = cfg.Properties
 			data.ElapsedTime = 0
@@ -245,6 +261,17 @@ func (c *Context) markExitingElements() {
 	}
 }
 
+func (c *Context) transitionDataWillExit(id uint32) bool {
+	for i := int32(0); i < c.transitionDatas.Length; i++ {
+		data := c.transitionDatas.Get(i)
+		if data.ElementID == id && data.TransitionOut {
+			item := c.getHashMapItem(data.ElementID)
+			return item != nil && item.Generation <= c.generation
+		}
+	}
+	return false
+}
+
 // cloneElementsWithExitTransition copies each EXITING transition's previous-
 // frame subtree into the high end of layoutElements / layoutElementChildren
 // so the second final-layout pass can size, position, and render the subtree
@@ -252,18 +279,11 @@ func (c *Context) markExitingElements() {
 //
 // Mirrors Clay__CloneElementsWithExitTransition (oracle/clay.h ~line 4374) and
 // folds in the parent-reattachment logic the C version performs separately in
-// Clay_EndLayout (~line 4505-4567). The Go port deviates from upstream in two
-// ways:
-//   1. Cloned subtrees are always registered as a NEW layoutElementTreeRoot
-//      (positioned by floating-attach to the root container at the element's
-//      last-known bbox), rather than being spliced into a still-living
-//      parent's children list. This avoids mutating user-declared parents
-//      mid-pass and keeps the cloned subtree visible even when its real
-//      parent is also exiting.
-//   2. layoutElements.Length / layoutElementChildren.Length are bumped to
-//      their capacities at the end of the call so plain Get() reads of the
-//      cloned high-index slots succeed during the second layout pass. The C
-//      version relies on GetCheckCapacity for the equivalent reads.
+// Clay_EndLayout (~line 4505-4567). Non-floating clones are inserted back into
+// a live parent's child list according to exit.siblingOrdering; floating or
+// orphaned clones become independent tree roots. layoutElements.Length /
+// layoutElementChildren.Length are bumped to capacity at the end so plain Get
+// reads can reach the high-index clone slots during the second layout pass.
 //
 // Walks the transition table once. For each entry in EXITING state whose
 // ElementThisFrame still points at the previous frame's LayoutElement, runs a
@@ -285,8 +305,6 @@ func (c *Context) cloneElementsWithExitTransition() {
 
 	nextIndex := c.layoutElements.Capacity - 1
 	nextChildIndex := c.layoutElementChildren.Capacity - 1
-	rootContainerID := HashString(String{Text: rootElementIDString}, 0).ID
-
 	// Track which source element IDs we've already cloned this pass so a
 	// nested exiting element (e.g. child also has its own transition entry)
 	// isn't cloned twice when its ancestor's subtree already covered it.
@@ -331,14 +349,6 @@ func (c *Context) cloneElementsWithExitTransition() {
 			return
 		}
 		rootClone.Exiting = true
-		// Make the cloned root float at its last-known position so the
-		// layout pass places it where the user last saw it. The hashmap
-		// still carries the element's stale bbox from the prior frame.
-		if prevItem := c.getHashMapItem(td.ElementID); prevItem != nil {
-			rootClone.Config.Floating.AttachTo = AttachToRoot
-			rootClone.Config.Floating.ParentID = rootContainerID
-			rootClone.Config.Floating.Offset = Vector2{X: prevItem.BoundingBox.X, Y: prevItem.BoundingBox.Y}
-		}
 		// Pin sizing to the recorded dimensions so the layout solver doesn't
 		// try to FIT/GROW the exiting element relative to its (now-missing)
 		// parent. Mirrors C clay.h:4494-4495.
@@ -357,6 +367,11 @@ func (c *Context) cloneElementsWithExitTransition() {
 		for bi := 0; bi < len(bfs); bi++ {
 			parentIdx := bfs[bi]
 			parent := c.layoutElements.GetCheckCapacity(parentIdx)
+			if item := c.getHashMapItem(parent.ID); item != nil && item.Generation <= c.generation {
+				item.Generation = c.generation + 1
+				item.LayoutElement = parent
+				item.AppearedThisFrame = false
+			}
 			childCount := parent.Children.Length
 			if childCount == 0 {
 				continue
@@ -414,13 +429,20 @@ func (c *Context) cloneElementsWithExitTransition() {
 			}
 		}
 
-		// Register the cloned subtree root as its own tree root so the
-		// sizing / final-layout passes visit it. Floating-attach config set
-		// above places it at the previous bbox.
-		c.layoutElementTreeRoots.Add(layoutElementTreeRoot{
-			LayoutElementIndex: rootCloneIdx,
-			ParentID:           rootContainerID,
-		})
+		parentItem := c.getHashMapItem(td.ParentID)
+		parentAlive := parentItem != nil && parentItem.Generation > c.generation && parentItem.LayoutElement != nil
+		reattached := false
+		if parentAlive && rootClone.Config.Floating.AttachTo == AttachToNone {
+			reattached = c.reattachExitingClone(parentItem.LayoutElement, rootCloneIdx, td, &nextChildIndex)
+		}
+		if !reattached {
+			// Floating elements and orphaned exits render as independent roots.
+			c.layoutElementTreeRoots.Add(layoutElementTreeRoot{
+				LayoutElementIndex: rootCloneIdx,
+				ParentID:           rootClone.Config.Floating.ParentID,
+				ZIndex:             rootClone.Config.Floating.ZIndex,
+			})
+		}
 	}
 
 	// Bump Length to capacity so plain Get() reads inside the final-layout
@@ -429,6 +451,54 @@ func (c *Context) cloneElementsWithExitTransition() {
 	// resets Length to 0 next frame before any new declarations.
 	c.layoutElements.Length = c.layoutElements.Capacity
 	c.layoutElementChildren.Length = c.layoutElementChildren.Capacity
+}
+
+func (c *Context) reattachExitingClone(parent *LayoutElement, cloneIdx int32, td *transitionDataInternal, nextChildIndex *int32) bool {
+	oldLen := parent.Children.Length
+	newLen := oldLen + 1
+	start := *nextChildIndex - newLen + 1
+	if start < c.layoutElementChildren.Length {
+		c.reportError(ErrorTypeElementsCapacityExceeded,
+			"Clay has run out of space for exit-transition sibling ordering. Try using SetMaxElementCount() with a higher value.")
+		c.layoutElements.Length = c.layoutElements.Capacity
+		c.layoutElementChildren.Length = c.layoutElementChildren.Capacity
+		return false
+	}
+
+	write := start
+	foundNaturalSlot := false
+	exitOrdering := c.layoutElements.GetCheckCapacity(cloneIdx).Config.Transition.Exit.SiblingOrdering
+	if exitOrdering == ExitTransitionOrderingUnderneathSiblings {
+		c.layoutElementChildren.Data[write] = cloneIdx
+		write++
+		foundNaturalSlot = true
+	}
+	for j := int32(0); j < oldLen; j++ {
+		if exitOrdering == ExitTransitionOrderingNaturalOrder && j == td.SiblingIndex {
+			c.layoutElementChildren.Data[write] = cloneIdx
+			write++
+			foundNaturalSlot = true
+		}
+		c.layoutElementChildren.Data[write] = parent.Children.Data[j]
+		write++
+	}
+	if !foundNaturalSlot {
+		c.layoutElementChildren.Data[write] = cloneIdx
+	}
+
+	parent.Children.Length = newLen
+	parent.Children.Data = c.layoutElementChildren.Data[start : start+newLen]
+	*nextChildIndex = start - 1
+	return true
+}
+
+func (c *Context) snapshotTransitionElements() {
+	for i := int32(0); i < c.transitionDatas.Length; i++ {
+		data := c.transitionDatas.Get(i)
+		if data.ElementThisFrame != nil && data.ElementThisFrame.ID == data.ElementID {
+			data.ElementSnapshot = *data.ElementThisFrame
+		}
+	}
 }
 
 // advanceTransitions runs the per-frame state-machine tick: for every live
@@ -513,23 +583,25 @@ func (c *Context) advanceTransitions(deltaTime float32) {
 
 			if properties&TransitionPropertyX != 0 {
 				if !floatEqual(oldTargetState.BoundingBox.X, targetState.BoundingBox.X) &&
-					(!floatEqual(oldRelativePosition.X, newRelativePosition.X) || td.Reparented) {
+					(!floatEqual(oldRelativePosition.X, newRelativePosition.X) || td.Reparented) &&
+					!c.rootResizedLastFrame {
 					newActive |= TransitionPropertyX
 				}
 			}
 			if properties&TransitionPropertyY != 0 {
 				if !floatEqual(oldTargetState.BoundingBox.Y, targetState.BoundingBox.Y) &&
-					(!floatEqual(oldRelativePosition.Y, newRelativePosition.Y) || td.Reparented) {
+					(!floatEqual(oldRelativePosition.Y, newRelativePosition.Y) || td.Reparented) &&
+					!c.rootResizedLastFrame {
 					newActive |= TransitionPropertyY
 				}
 			}
 			if properties&TransitionPropertyWidth != 0 {
-				if !floatEqual(oldTargetState.BoundingBox.Width, targetState.BoundingBox.Width) {
+				if !floatEqual(oldTargetState.BoundingBox.Width, targetState.BoundingBox.Width) && !c.rootResizedLastFrame {
 					newActive |= TransitionPropertyWidth
 				}
 			}
 			if properties&TransitionPropertyHeight != 0 {
-				if !floatEqual(oldTargetState.BoundingBox.Height, targetState.BoundingBox.Height) {
+				if !floatEqual(oldTargetState.BoundingBox.Height, targetState.BoundingBox.Height) && !c.rootResizedLastFrame {
 					newActive |= TransitionPropertyHeight
 				}
 			}

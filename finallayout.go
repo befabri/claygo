@@ -7,22 +7,9 @@ package claygo
 // child gap and child alignment, then (b) emits the per-element render
 // commands in z-order.
 //
-// What is intentionally skipped (deferred to later port waves):
-//   - Text wrapping: scenes covered by the current corpus never overflow
-//     their parents, so wrappedLines collapse to a single line containing
-//     the full text. The wrap pass becomes necessary once we add a scene
-//     that needs it.
-//   - Aspect-ratio scaling.
-//   - Floating containers (no layoutElementTreeRoots yet).
-//   - Clip / scroll containers (no openClipElementStack data).
-//   - Borders, overlay colors, images, custom elements: the render-command
-//     emission below only handles RECTANGLE and TEXT, the two types our
-//     committed goldens exercise.
-//   - DFS upward-pass: would emit borders / overlay-end / scissor-end.
-//     With none of those features active, the upward visit is a no-op so
-//     we skip the second visited-marker check entirely.
-//   - Tree-root z-index sort (single root).
-//   - Transition state tracking.
+// This file also handles the final aspect-ratio corrections, root z-sort,
+// clip scissor emission, floating-root positioning, and render-command
+// generation for every command type Clay exposes.
 
 // layoutTreeNode is one frame of the DFS stack used during final positioning.
 // Mirrors Clay__LayoutElementTreeNode (oracle/clay.h ~line 1232).
@@ -80,11 +67,13 @@ func (c *Context) elementIsOffscreen(b BoundingBox) bool {
 // Mirrors Clay__CalculateFinalLayout (oracle/clay.h ~line 2573).
 func (c *Context) calculateFinalLayout(deltaTime float32) RenderCommandArray {
 	c.sizeContainersAlongAxis(true)
+	aspectRatioElements := c.collectAspectRatioElements()
 	c.wrappedTextLines.Length = 0
 	c.wrapTextElements()
+	c.scaleAspectRatioHeights(aspectRatioElements)
 	c.propagateTextHeights()
 	c.sizeContainersAlongAxis(false)
-	// TODO (aspect wave): scale widths off the now-final heights.
+	c.scaleAspectRatioWidths(aspectRatioElements)
 
 	// Sort tree roots by zIndex ascending. Mirrors C's bubble sort at
 	// oracle/clay.h ~line 2702. Tiny list (handful of entries in practice)
@@ -118,6 +107,55 @@ func (c *Context) calculateFinalLayout(deltaTime float32) RenderCommandArray {
 	return RenderCommandArray{Commands: commands}
 }
 
+func (c *Context) collectAspectRatioElements() []int32 {
+	var out []int32
+	var stack []int32
+	for rootIdx := int32(0); rootIdx < c.layoutElementTreeRoots.Length; rootIdx++ {
+		root := c.layoutElements.Get(c.layoutElementTreeRoots.Get(rootIdx).LayoutElementIndex)
+		for i := int32(0); i < root.Children.Length; i++ {
+			stack = append(stack, root.Children.Data[i])
+		}
+	}
+	for len(stack) > 0 {
+		idx := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		element := c.layoutElements.GetCheckCapacity(idx)
+		if element.IsTextElement {
+			continue
+		}
+		if element.Config.AspectRatio.AspectRatio != 0 {
+			out = append(out, idx)
+		}
+		for i := int32(0); i < element.Children.Length; i++ {
+			stack = append(stack, element.Children.Data[i])
+		}
+	}
+	return out
+}
+
+func (c *Context) scaleAspectRatioHeights(indices []int32) {
+	for _, idx := range indices {
+		element := c.layoutElements.GetCheckCapacity(idx)
+		ar := element.Config.AspectRatio.AspectRatio
+		if ar == 0 {
+			continue
+		}
+		element.Dimensions.Height = element.Dimensions.Width * (1 / ar)
+		element.Config.Layout.Sizing.Height.MinMax.Max = element.Dimensions.Height
+	}
+}
+
+func (c *Context) scaleAspectRatioWidths(indices []int32) {
+	for _, idx := range indices {
+		element := c.layoutElements.GetCheckCapacity(idx)
+		ar := element.Config.AspectRatio.AspectRatio
+		if ar == 0 {
+			continue
+		}
+		element.Dimensions.Width = ar * element.Dimensions.Height
+	}
+}
+
 // emitTreeRoot runs the position+emission DFS for one tree root. For the
 // auto-root the starting position is (0,0); for a floating root it's
 // derived from the floating attach-point config against the parent's
@@ -145,6 +183,15 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 	if treeRoot.ClipElementID != 0 {
 		if clipItem := c.getHashMapItem(treeRoot.ClipElementID); clipItem != nil &&
 			!c.elementIsOffscreen(clipItem.BoundingBox) {
+			if c.externalScrollHandlingEnabled && clipItem.LayoutElement != nil {
+				clipCfg := clipItem.LayoutElement.Config.Clip
+				if clipCfg.Horizontal {
+					rootPosition.X += clipCfg.ChildOffset.X
+				}
+				if clipCfg.Vertical {
+					rootPosition.Y += clipCfg.ChildOffset.Y
+				}
+			}
 			clipScissorBBox = clipItem.BoundingBox
 			emitClipBound = true
 			c.emitCommand(RenderCommand{
@@ -210,6 +257,9 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 				var dividerScrollOffset Vector2
 				if cur.Config.Clip.Horizontal || cur.Config.Clip.Vertical {
 					dividerScrollOffset = cur.Config.Clip.ChildOffset
+					if c.externalScrollHandlingEnabled {
+						dividerScrollOffset = Vector2{}
+					}
 				}
 
 				if borderHasAnyWidth(cur.Config.Border) {
@@ -222,9 +272,9 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 								Width:        cur.Config.Border.Width,
 							},
 						},
-						UserData:    cur.Config.UserData,
-						ID:          HashNumber(uint32(cur.Children.Length), cur.ID).ID,
-						ZIndex:      treeZ,
+						UserData: cur.Config.UserData,
+						ID:       HashNumber(uint32(cur.Children.Length), cur.ID).ID,
+						ZIndex:   treeZ,
 
 						CommandType: RenderCommandTypeBorder,
 					})
@@ -253,9 +303,9 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 										RenderData: RenderData{
 											Rectangle: RectangleRenderData{BackgroundColor: cur.Config.Border.Color},
 										},
-										UserData:    cur.Config.UserData,
-										ID:          HashNumber(uint32(cur.Children.Length+1+i), cur.ID).ID,
-										ZIndex:      treeZ,
+										UserData: cur.Config.UserData,
+										ID:       HashNumber(uint32(cur.Children.Length+1+i), cur.ID).ID,
+										ZIndex:   treeZ,
 
 										CommandType: RenderCommandTypeRectangle,
 									})
@@ -276,9 +326,9 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 										RenderData: RenderData{
 											Rectangle: RectangleRenderData{BackgroundColor: cur.Config.Border.Color},
 										},
-										UserData:    cur.Config.UserData,
-										ID:          HashNumber(uint32(cur.Children.Length+1+i), cur.ID).ID,
-										ZIndex:      treeZ,
+										UserData: cur.Config.UserData,
+										ID:       HashNumber(uint32(cur.Children.Length+1+i), cur.ID).ID,
+										ZIndex:   treeZ,
 
 										CommandType: RenderCommandTypeRectangle,
 									})
@@ -291,10 +341,10 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 
 				if cur.Config.OverlayColor.A > 0 {
 					c.emitCommand(RenderCommand{
-						RenderData:  RenderData{OverlayColor: OverlayColorRenderData{}}, // C emits zero color here; the END marker doesn't carry color
-						UserData:    cur.Config.UserData,
-						ID:          cur.ID,
-						ZIndex:      treeZ,
+						RenderData: RenderData{OverlayColor: OverlayColorRenderData{}}, // C emits zero color here; the END marker doesn't carry color
+						UserData:   cur.Config.UserData,
+						ID:         cur.ID,
+						ZIndex:     treeZ,
 
 						CommandType: RenderCommandTypeOverlayColorEnd,
 					})
@@ -302,8 +352,8 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 
 				if cur.Config.Clip.Horizontal || cur.Config.Clip.Vertical {
 					c.emitCommand(RenderCommand{
-						ID:          HashNumber(cur.ID, uint32(rootChildCount)+11).ID,
-						ZIndex:      treeZ,
+						ID:     HashNumber(cur.ID, uint32(rootChildCount)+11).ID,
+						ZIndex: treeZ,
 
 						CommandType: RenderCommandTypeScissorEnd,
 					})
@@ -334,6 +384,13 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 				visited = visited[:idx]
 				continue
 			}
+		}
+		if cur.Config.Floating.AttachTo != AttachToNone {
+			expand := cur.Config.Floating.Expand
+			bbox.X -= expand.Width
+			bbox.Width += expand.Width * 2
+			bbox.Y -= expand.Height
+			bbox.Height += expand.Height * 2
 		}
 
 		// Record the final bbox on the hashmap item so caller queries
@@ -400,9 +457,9 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 							LineHeight:     textCfg.LineHeight,
 						},
 					},
-					UserData:    textCfg.UserData,
-					ID:          HashNumber(uint32(lineIdx), cur.ID).ID,
-					ZIndex:      treeZ,
+					UserData: textCfg.UserData,
+					ID:       HashNumber(uint32(lineIdx), cur.ID).ID,
+					ZIndex:   treeZ,
 
 					CommandType: RenderCommandTypeText,
 				})
@@ -430,9 +487,9 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 				RenderData: RenderData{
 					OverlayColor: OverlayColorRenderData{Color: cur.Config.OverlayColor},
 				},
-				UserData:    cur.Config.UserData,
-				ID:          cur.ID,
-				ZIndex:      treeZ,
+				UserData: cur.Config.UserData,
+				ID:       cur.ID,
+				ZIndex:   treeZ,
 
 				CommandType: RenderCommandTypeOverlayColorStart,
 			})
@@ -448,9 +505,9 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 						ImageData:       cur.Config.Image.ImageData,
 					},
 				},
-				UserData:    cur.Config.UserData,
-				ID:          cur.ID,
-				ZIndex:      treeZ,
+				UserData: cur.Config.UserData,
+				ID:       cur.ID,
+				ZIndex:   treeZ,
 
 				CommandType: RenderCommandTypeImage,
 			})
@@ -466,9 +523,9 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 						CustomData:      cur.Config.Custom.CustomData,
 					},
 				},
-				UserData:    cur.Config.UserData,
-				ID:          cur.ID,
-				ZIndex:      treeZ,
+				UserData: cur.Config.UserData,
+				ID:       cur.ID,
+				ZIndex:   treeZ,
 
 				CommandType: RenderCommandTypeCustom,
 			})
@@ -483,9 +540,9 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 						Vertical:   cur.Config.Clip.Vertical,
 					},
 				},
-				UserData:    cur.Config.UserData,
-				ID:          cur.ID,
-				ZIndex:      treeZ,
+				UserData: cur.Config.UserData,
+				ID:       cur.ID,
+				ZIndex:   treeZ,
 
 				CommandType: RenderCommandTypeScissorStart,
 			})
@@ -504,9 +561,9 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 						CornerRadius:    cur.Config.CornerRadius,
 					},
 				},
-				UserData:    cur.Config.UserData,
-				ID:          cur.ID,
-				ZIndex:      treeZ,
+				UserData: cur.Config.UserData,
+				ID:       cur.ID,
+				ZIndex:   treeZ,
 
 				CommandType: RenderCommandTypeRectangle,
 			})
@@ -528,6 +585,9 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 		if layoutCfg.LayoutDirection == LeftToRight {
 			for i := int32(0); i < cur.Children.Length; i++ {
 				child := c.layoutElements.Get(cur.Children.Data[i])
+				if child.Exiting {
+					continue
+				}
 				contentSize.Width += child.Dimensions.Width
 				if child.Dimensions.Height > contentSize.Height {
 					contentSize.Height = child.Dimensions.Height
@@ -549,6 +609,9 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 		} else if layoutCfg.LayoutDirection == TopToBottom {
 			for i := int32(0); i < cur.Children.Length; i++ {
 				child := c.layoutElements.Get(cur.Children.Data[i])
+				if child.Exiting {
+					continue
+				}
 				if child.Dimensions.Width > contentSize.Width {
 					contentSize.Width = child.Dimensions.Width
 				}
@@ -586,6 +649,9 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 					Height: contentSize.Height + float32(layoutCfg.Padding.Top+layoutCfg.Padding.Bottom),
 				}
 				scrollOffset = cur.Config.Clip.ChildOffset
+				if c.externalScrollHandlingEnabled {
+					scrollOffset = Vector2{}
+				}
 				break
 			}
 		}
@@ -653,10 +719,12 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 
 			// Advance the parent's cursor along the layout axis for the next
 			// sibling.
-			if layoutCfg.LayoutDirection == LeftToRight {
-				node.nextChildOffset.X += child.Dimensions.Width + float32(layoutCfg.ChildGap)
-			} else {
-				node.nextChildOffset.Y += child.Dimensions.Height + float32(layoutCfg.ChildGap)
+			if !child.Exiting {
+				if layoutCfg.LayoutDirection == LeftToRight {
+					node.nextChildOffset.X += child.Dimensions.Width + float32(layoutCfg.ChildGap)
+				} else {
+					node.nextChildOffset.Y += child.Dimensions.Height + float32(layoutCfg.ChildGap)
+				}
 			}
 		}
 	}

@@ -39,8 +39,7 @@ type LayoutElement struct {
 	// IsTextElement discriminates between Config and TextConfig+TextElementData.
 	IsTextElement bool
 	// Exiting is true when the element is currently in an exit transition and
-	// its data was retained from a previous frame. Reserved for the future
-	// transition-handling wave; never set by foundation code.
+	// its data was retained from a previous frame.
 	Exiting bool
 }
 
@@ -61,9 +60,7 @@ type WrappedTextLine struct {
 }
 
 // HoverHandler is the user-installed callback that fires when the pointer is
-// over an element with a registered OnHover. The Hover API itself is part of
-// a later port wave; for now this type exists so LayoutElementHashMapItem can
-// carry the field without breaking the public surface later.
+// over an element with a registered OnHover.
 type HoverHandler func(elementID ElementID, pointer PointerData, userData any)
 
 // LayoutElementHashMapItem is one entry in Clay's ID-to-element open-addressed
@@ -77,8 +74,8 @@ type LayoutElementHashMapItem struct {
 	ElementID     ElementID
 	LayoutElement *LayoutElement
 
-	// OnHoverFunction is reserved for the Hover API port. Foundation code
-	// must not call this; it is always nil here.
+	// OnHoverFunction is called by SetPointerState when the pointer is over
+	// this element.
 	OnHoverFunction       HoverHandler
 	HoverFunctionUserData any
 
@@ -88,9 +85,8 @@ type LayoutElementHashMapItem struct {
 	// Generation is the frame counter at which this entry was (re)used. The
 	// solver compares against Context.generation to detect stale entries.
 	Generation uint32
-	// IDAlias mirrors upstream's idAlias field, used by re-declared
-	// elements that share an ID with a previously-emitted one. Foundation
-	// code does not set this; reserved for future waves.
+	// IDAlias mirrors upstream's idAlias field, used by re-declared elements
+	// that share an ID with a previously-emitted one.
 	IDAlias uint32
 	// AppearedThisFrame is true when AddHashMapItem (re)issued this slot in
 	// the current frame.
@@ -150,7 +146,7 @@ func (c *Context) addHashMapItem(elementID ElementID, element *LayoutElement) *L
 				hashItem.HoverFunctionUserData = nil
 			} else {
 				c.reportError(ErrorTypeDuplicateID,
-					"An element with this ID was already previously declared during this layout.")
+					"An element with this ID was already declared during this layout. Each id must be unique per frame; inside loops, prefer BoxIDOffset(c, name, uint32(i), ...) so each iteration gets a distinct id.")
 				if c.debugMode {
 					hashItem.DebugData.Collision = true
 				}

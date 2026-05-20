@@ -9,15 +9,9 @@ package claygo
 // Run sizeContainersAlongAxis(true) then sizeContainersAlongAxis(false) to
 // fully size the tree.
 //
-// What is intentionally skipped (deferred to later port waves):
-//   - layoutElementTreeRoots: we currently have exactly one root (index 0).
-//     Floating-attached subtrees will add additional roots; until then the
-//     solver iterates a single hardcoded root.
-//   - Clip-container fast paths (parent.clip.horizontal/vertical): these
-//     toggle whether children get compressed or scroll-overflow. Treated as
-//     always-false for now.
-//   - The textElementsOut and aspectRatioElementsOut callback-buffers used
-//     by the wrapping and aspect-ratio passes are not used here yet.
+// The Go port iterates all tree roots and implements Clay's clip-container
+// overflow rule: clipped axes keep their children at preferred size and let the
+// final scissor pass hide overflow.
 
 const epsilon float32 = 0.01
 
@@ -124,6 +118,9 @@ func (c *Context) sizeOneRoot(xAxis bool, bfs, resizable *Array[int32]) {
 			// iterate them with parent widths now known.
 			if xAxis && child.IsTextElement {
 				c.textElements.Add(childIdx)
+			}
+			if child.Exiting {
+				continue
 			}
 
 			// Resizable set: anything that's not FIXED/PERCENT and not a

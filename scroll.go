@@ -245,6 +245,26 @@ func (c *Context) GetScrollContainerData(id ElementID) ScrollContainerData {
 	return ScrollContainerData{}
 }
 
+// GetScrollOffset returns the scroll offset for the currently-open clip
+// element, or zero when no matching scroll container has been registered yet.
+// This mirrors Clay_GetScrollOffset (oracle/clay.h ~line 4224).
+func (c *Context) GetScrollOffset() Vector2 {
+	if c.warnMaxElementsExceeded {
+		return Vector2{}
+	}
+	openLE := c.getOpenLayoutElement()
+	if openLE == nil {
+		return Vector2{}
+	}
+	for i := int32(0); i < c.scrollContainerDatas.Length; i++ {
+		sd := c.scrollContainerDatas.Get(i)
+		if sd.ElementID == openLE.ID {
+			return sd.ScrollPosition
+		}
+	}
+	return Vector2{}
+}
+
 // findOrCreateScrollContainer locates the scrollContainerDataInternal entry
 // for the given LayoutElement, creating one if it doesn't exist. Called
 // from configureOpenElement's clip branch. The returned pointer is valid
@@ -256,13 +276,20 @@ func (c *Context) findOrCreateScrollContainer(le *LayoutElement) *scrollContaine
 		if sd.ElementID == le.ID {
 			sd.LayoutElement = le
 			sd.OpenThisFrame = true
+			if c.externalScrollHandlingEnabled && c.queryScrollOffsetFunction != nil {
+				sd.ScrollPosition = c.queryScrollOffsetFunction(sd.ElementID, c.queryScrollOffsetUserData)
+			}
 			return sd
 		}
 	}
-	return c.scrollContainerDatas.Add(scrollContainerDataInternal{
+	sd := c.scrollContainerDatas.Add(scrollContainerDataInternal{
 		LayoutElement: le,
 		ElementID:     le.ID,
 		ScrollOrigin:  Vector2{X: -1, Y: -1},
 		OpenThisFrame: true,
 	})
+	if c.externalScrollHandlingEnabled && c.queryScrollOffsetFunction != nil {
+		sd.ScrollPosition = c.queryScrollOffsetFunction(sd.ElementID, c.queryScrollOffsetUserData)
+	}
+	return sd
 }

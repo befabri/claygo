@@ -30,9 +30,9 @@ import "strconv"
 // All elements declared by the debug view get string ids prefixed with
 // "Clay__Debug_" so they cannot collide with anything the user declared.
 
-// debugViewWidth is the fixed pixel width of the debug side panel.
+// DebugViewWidth is the fixed pixel width of the debug side panel.
 // Mirrors Clay__debugViewWidth (oracle/clay.h:3952).
-const debugViewWidth float32 = 400
+var DebugViewWidth float32 = 400
 
 // debugViewRowHeight is the per-row height used in the element list and
 // header. Mirrors CLAY__DEBUGVIEW_ROW_HEIGHT (oracle/clay.h:3206).
@@ -69,14 +69,18 @@ var (
 	debugColor3        = RGBA(141, 133, 135, 255) // muted text / dividers
 	debugColor4        = RGBA(238, 226, 231, 255) // primary text
 	debugColorSelected = RGBA(102, 80, 78, 255)   // selected row bg
-	debugColorHighlight = RGBA(168, 66, 28, 100)  // translucent scene overlay
-	debugColorDup       = RGBA(177, 147, 8, 255)  // duplicate-id border
+	debugColorDup      = RGBA(177, 147, 8, 255)   // duplicate-id border
 
 	// debugColorInspectorHeader fills the title strip on each inspector
 	// section ("BBox", "Layout", "Sizing", ...).
 	debugColorInspectorHeader       = Color{R: 200, G: 200, B: 200, A: 120}
 	debugColorInspectorHeaderBorder = Color{R: 200, G: 200, B: 200, A: 255}
 )
+
+// DebugViewHighlightColor is the translucent color used to highlight the live
+// scene element corresponding to the hovered debug row. Mirrors
+// Clay__debugViewHighlightColor (oracle/clay.h:3953).
+var DebugViewHighlightColor = RGBA(168, 66, 28, 100)
 
 // debugConfigChip describes one of the colored type labels that appears
 // next to an element row (Background, Border, Floating, Clip, ...).
@@ -161,7 +165,7 @@ func (c *Context) renderDebugView() {
 	// upstream version derives this geometrically from the pointer Y
 	// (oracle/clay.h:3554) — same trick here. The "-1" offset accounts
 	// for the header row above the list.
-	pointerInPanel := c.pointerPosition.X >= c.layoutDimensions.Width-debugViewWidth &&
+	pointerInPanel := c.pointerPosition.X >= c.layoutDimensions.Width-DebugViewWidth &&
 		c.pointerPosition.X <= c.layoutDimensions.Width &&
 		c.pointerPosition.Y >= debugViewRowHeight &&
 		c.pointerPosition.Y < c.layoutDimensions.Height-debugViewInspectorHeight
@@ -170,7 +174,7 @@ func (c *Context) renderDebugView() {
 		// Header occupies row 0; list rows begin at y = rowHeight (after
 		// header) inside the panel. So pointerY / rowHeight - 1 is the
 		// row index within the list (matches C 3554-3556).
-		highlightedRow = int32((c.pointerPosition.Y) / debugViewRowHeight) - 1
+		highlightedRow = int32((c.pointerPosition.Y)/debugViewRowHeight) - 1
 	}
 
 	// rowEntries is built during DFS and consumed afterward to (a) drive
@@ -182,7 +186,7 @@ func (c *Context) renderDebugView() {
 	BoxID(c, "Clay__Debug_Panel", Decl{
 		Layout: LayoutConfig{
 			Sizing: Sizing{
-				Width:  SizingFixed(debugViewWidth),
+				Width:  SizingFixed(DebugViewWidth),
 				Height: SizingFixed(c.layoutDimensions.Height),
 			},
 			LayoutDirection: TopToBottom,
@@ -255,7 +259,7 @@ func (c *Context) renderDebugView() {
 			Layout: LayoutConfig{
 				Sizing: Sizing{Width: SizingGrow(0), Height: SizingGrow(0)},
 			},
-			BackgroundColor: debugColorHighlight,
+			BackgroundColor: DebugViewHighlightColor,
 			Floating: FloatingElementConfig{
 				ZIndex:             debugViewHighlightZ,
 				ParentID:           highlightedElementID,
@@ -326,7 +330,7 @@ func (c *Context) debugElementList(userRoots int32, highlightedRow int32) ([]deb
 	BoxID(c, "Clay__Debug_ListClip", Decl{
 		Layout: LayoutConfig{
 			Sizing: Sizing{
-				Width:  SizingGrow(0),
+				Width: SizingGrow(0),
 				// The list region grows to fill whatever space remains
 				// after the header and the inspector pane. The clip
 				// makes it scrollable.
@@ -618,9 +622,8 @@ func (c *Context) debugChip(chip debugConfigChip, elementID uint32, slot int32) 
 // debugInspectorPane is the bottom section of the debug panel: a fixed-
 // height scrollable region that, when an element is selected, shows the
 // element's bbox / layout / sizing / padding / floating / clip / border
-// breakdowns. When no element is selected the pane shows a hint to
-// click a row. Mirrors the lower half of Clay__RenderDebugView
-// (oracle/clay.h:3607-3928).
+// breakdowns. When no element is selected the pane shows queued warnings.
+// Mirrors the lower half of Clay__RenderDebugView (oracle/clay.h:3607-3945).
 func (c *Context) debugInspectorPane() {
 	BoxID(c, "Clay__Debug_Inspector", Decl{
 		Layout: LayoutConfig{
@@ -662,19 +665,41 @@ func (c *Context) debugInspectorPane() {
 		})
 
 		if selected == nil || selected.LayoutElement == nil {
-			// No selection: hint row.
-			BoxID(c, "Clay__Debug_InspectorEmpty", Decl{
-				Layout: LayoutConfig{
-					Sizing:  Sizing{Width: SizingGrow(0)},
-					Padding: Padding{Left: debugViewOuterPadding, Right: debugViewOuterPadding, Top: 8, Bottom: 8},
-				},
-			}, func() {
-				Text(c, "Click a row above to inspect an element.", debugTitleConfig())
-			})
+			c.debugWarningsBody()
 			return
 		}
 		c.debugInspectorBody(selected)
 	})
+}
+
+func (c *Context) debugWarningsBody() {
+	warningConfig := TextElementConfig{TextColor: debugColor4, FontSize: 16, WrapMode: TextWrapNone}
+	BoxID(c, "Clay__DebugViewWarningItemHeader", Decl{
+		Layout: LayoutConfig{
+			Sizing:         Sizing{Height: SizingFixed(debugViewRowHeight)},
+			Padding:        Padding{Left: debugViewOuterPadding, Right: debugViewOuterPadding},
+			ChildGap:       8,
+			ChildAlignment: ChildAlignment{Y: AlignYCenter},
+		},
+	}, func() {
+		Text(c, "Warnings", warningConfig)
+	})
+	BoxID(c, "Clay__DebugViewWarningsTopBorder", Decl{
+		Layout:          LayoutConfig{Sizing: Sizing{Width: SizingGrow(0), Height: SizingFixed(1)}},
+		BackgroundColor: RGBA(200, 200, 200, 255),
+	}, nil)
+	for i, warning := range c.warnings {
+		BoxIDOffset(c, "Clay__DebugViewWarningItem", uint32(i), Decl{
+			Layout: LayoutConfig{
+				Sizing:         Sizing{Height: SizingFixed(debugViewRowHeight)},
+				Padding:        Padding{Left: debugViewOuterPadding, Right: debugViewOuterPadding},
+				ChildGap:       8,
+				ChildAlignment: ChildAlignment{Y: AlignYCenter},
+			},
+		}, func() {
+			Text(c, warning.Text, warningConfig)
+		})
+	}
 }
 
 // debugInspectorBody emits the actual breakdown for the selected

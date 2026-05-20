@@ -89,3 +89,21 @@ func (a RenderCommandArray) Get(i int) RenderCommand {
 	}
 	return a.Commands[i]
 }
+
+// GetPtr returns a pointer to the i-th command, or nil if out of range. This
+// mirrors Clay_RenderCommandArray_Get for callers that need pointer semantics.
+func (a RenderCommandArray) GetPtr(i int) *RenderCommand {
+	if i < 0 || i >= len(a.Commands) {
+		return nil
+	}
+	return &a.Commands[i]
+}
+
+// RenderCommandArray_Get is the package-level Clay_RenderCommandArray_Get
+// analogue. It returns nil when array is nil or i is out of range.
+func RenderCommandArray_Get(array *RenderCommandArray, i int32) *RenderCommand {
+	if array == nil {
+		return nil
+	}
+	return array.GetPtr(int(i))
+}
