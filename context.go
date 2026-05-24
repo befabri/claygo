@@ -321,18 +321,20 @@ func (c *Context) allocateEphemeralMemory() {
 // enough: every array is written before it is read within a frame, and the
 // high-index exit-clone slots are written before being read too.
 //
-// Pointer-bearing arrays (layoutElements, renderCommands, wrappedTextLines)
-// are additionally cleared over their previously-dirtied range so stale entries
-// don't keep last frame's strings, image/UserData (`any`), handler funcs, etc.
-// reachable until they happen to be overwritten. The other ephemeral arrays
-// hold only int32 indices, so a plain Length reset is sufficient.
+// layoutElements is pointer-bearing (Config holds funcs / image+UserData `any`
+// / strings), so its previously-dirtied range is cleared too, or stale entries
+// would keep last frame's referenced objects reachable. An exit-clone frame
+// fills both a live low-end and a clone high-end and bumps Length to capacity,
+// so we clear those two recorded ranges and skip the untouched middle (see
+// prevLayoutElementsLow / prevLayoutElementsCloneStart) — otherwise every
+// exit-animation frame would memset the whole array.
 //
-// renderCommands and wrappedTextLines are only ever filled contiguously from
-// index 0, so clearing [0, Length) covers them. layoutElements is special: an
-// exit-clone frame fills both a live low-end and a clone high-end and bumps
-// Length to capacity, so we clear those two recorded ranges and skip the
-// untouched middle (see prevLayoutElementsLow / prevLayoutElementsCloneStart) —
-// otherwise every exit-animation frame would memset the whole array.
+// renderCommands and wrappedTextLines are also pointer-bearing, but they are
+// NOT cleared here: EndLayout runs calculateFinalLayout up to twice (the two
+// transition passes can emit different counts), so each pass clears the prior
+// fill itself right before refilling. Clearing only here would miss slots that
+// the first pass wrote but the second didn't. Their Length is likewise left for
+// calculateFinalLayout to reset — nothing reads them before then.
 //
 // layoutElementClipElementIds is special the other way: it is read by element
 // slot (GetCheckCapacity) before its own slot is written, so it is grown to
@@ -342,16 +344,12 @@ func (c *Context) resetEphemeralMemory() {
 	if c.prevLayoutElementsCloneStart < c.layoutElements.Capacity {
 		clear(c.layoutElements.Data[c.prevLayoutElementsCloneStart:c.layoutElements.Capacity])
 	}
-	clear(c.renderCommands.Data[:c.renderCommands.Length])
-	clear(c.wrappedTextLines.Data[:c.wrappedTextLines.Length])
 
 	c.layoutElementChildrenBuffer.Length = 0
 	c.layoutElements.Length = 0
 	c.layoutElementChildren.Length = 0
 	c.openLayoutElementStack.Length = 0
-	c.renderCommands.Length = 0
 	c.layoutElementTreeRoots.Length = 0
-	c.wrappedTextLines.Length = 0
 	c.textElements.Length = 0
 	c.openClipElementStack.Length = 0
 
@@ -435,9 +433,9 @@ func (c *Context) BeginLayout() {
 // runs the sizing solver, lays out children, and returns a sorted array of
 // render commands ready to draw.
 //
-// The returned RenderCommandArray is backed by a reused buffer and is only
-// valid until the next BeginLayout, which overwrites it. Consume or copy it
-// before starting the next frame. Mirrors upstream Clay's contract.
+// The returned RenderCommandArray is backed by a reused buffer that the next
+// frame's layout overwrites. Consume or copy it before laying out the next
+// frame. Mirrors upstream Clay's "valid until the next frame" contract.
 //
 // Mirrors Clay_EndLayout (oracle/clay.h ~line 4448). The solver passes
 // (sizing x/y, positioning, render command emission) are implemented in

@@ -67,6 +67,11 @@ func (c *Context) elementIsOffscreen(b BoundingBox) bool {
 func (c *Context) calculateFinalLayout() RenderCommandArray {
 	c.sizeContainersAlongAxis(true)
 	aspectRatioElements := c.collectAspectRatioElements()
+	// Clear the previous fill (last frame, or the first transition pass) before
+	// refilling, so pointer-bearing WrappedTextLine slots a later/smaller pass
+	// doesn't reach can't pin stale strings. Owned here (not resetEphemeralMemory)
+	// because EndLayout can run this twice with different line counts.
+	clear(c.wrappedTextLines.Data[:c.wrappedTextLines.Length])
 	c.wrappedTextLines.Length = 0
 	c.wrapTextElements()
 	c.scaleAspectRatioHeights(aspectRatioElements)
@@ -91,6 +96,11 @@ func (c *Context) calculateFinalLayout() RenderCommandArray {
 		}
 	}
 
+	// Clear the previous fill before refilling (see the wrappedTextLines note
+	// above): a transition frame's second pass can emit fewer commands than the
+	// first, and those first-pass-only slots hold UserData / ImageData /
+	// CustomData / strings that would otherwise stay reachable.
+	clear(c.renderCommands.Data[:c.renderCommands.Length])
 	c.renderCommands.Length = 0
 
 	// One DFS per tree root. Roots emit into the same renderCommands array,

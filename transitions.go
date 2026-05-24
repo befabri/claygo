@@ -277,7 +277,7 @@ func (c *Context) cloneElementsWithExitTransition() {
 	// Track which source element IDs we've already cloned this pass so a
 	// nested exiting element (e.g. child also has its own transition entry)
 	// isn't cloned twice when its ancestor's subtree already covered it.
-	cloned := make(map[uint32]bool, c.transitionDatas.Length)
+	var cloned map[uint32]bool
 	// Upstream now removes transition records for nested children cloned as
 	// part of an exiting ancestor; the ancestor owns the subtree during exit.
 	var removeTransitionIDs []uint32
@@ -300,6 +300,9 @@ func (c *Context) cloneElementsWithExitTransition() {
 			// Already covered by an ancestor's exit subtree clone above; the
 			// nested transition record is removed after this loop, matching C.
 			continue
+		}
+		if cloned == nil {
+			cloned = make(map[uint32]bool, c.transitionDatas.Length)
 		}
 
 		// Defensive capacity check: refuse to clone if the high-end region
@@ -325,6 +328,7 @@ func (c *Context) cloneElementsWithExitTransition() {
 			return
 		}
 		wroteClone = true
+		c.recordExitCloneSlot(rootCloneIdx)
 		rootClone.Exiting = true
 		// Pin sizing to the recorded dimensions so the layout solver doesn't
 		// try to FIT/GROW the exiting element relative to its (now-missing)
@@ -400,6 +404,7 @@ func (c *Context) cloneElementsWithExitTransition() {
 				if childClone == nil {
 					return
 				}
+				c.recordExitCloneSlot(nextIndex)
 				childClone.Exiting = true
 				if childClone.IsTextElement {
 					childClone.TextElementData.WrappedLines.Length = 0
@@ -446,17 +451,28 @@ func (c *Context) cloneElementsWithExitTransition() {
 	}
 
 	if wroteClone {
-		// Record the clone high-end [nextIndex+1, capacity) so next frame's
-		// resetEphemeralMemory clears it (and the live low-end) without touching
-		// the untouched middle. Clones were written downward from capacity-1, so
-		// nextIndex+1 is the lowest occupied slot.
-		c.prevLayoutElementsCloneStart = nextIndex + 1
 		// Bump Length to capacity so plain Get() reads inside the final-layout
 		// DFS hit the cloned high-index slots. This is safe because (a) the
 		// cloned region is the only thing using those slots and (b) BeginLayout
-		// resets Length to 0 next frame before any new declarations.
+		// resets Length to 0 next frame before any new declarations. The clone
+		// region [prevLayoutElementsCloneStart, capacity) was recorded slot by
+		// slot via recordExitCloneSlot as each clone was written.
 		c.layoutElements.Length = c.layoutElements.Capacity
 		c.layoutElementChildren.Length = c.layoutElementChildren.Capacity
+	}
+}
+
+// recordExitCloneSlot widens the recorded exit-clone region to include high-end
+// slot idx. cloneElementsWithExitTransition calls it as each clone is written,
+// so resetEphemeralMemory clears every written clone next frame no matter which
+// path (normal completion or any capacity-error early return) the clone loop
+// exits through — recording at the write site rather than at each Length-bump
+// site removes the "remember to record on this error path too" footgun. The
+// region is [prevLayoutElementsCloneStart, capacity); EndLayout seeds the start
+// at capacity (empty) before the clone pass.
+func (c *Context) recordExitCloneSlot(idx int32) {
+	if idx < c.prevLayoutElementsCloneStart {
+		c.prevLayoutElementsCloneStart = idx
 	}
 }
 
@@ -530,6 +546,7 @@ func (c *Context) snapshotElementSubtree(root *LayoutElement, reuse []LayoutElem
 	if root == nil {
 		return nil
 	}
+	oldLen := len(reuse)
 	out := reuse[:0]
 	// Append the root keeping its (arena) Children temporarily so the BFS below
 	// can read the original child indices before we overwrite them.
@@ -551,6 +568,9 @@ func (c *Context) snapshotElementSubtree(root *LayoutElement, reuse []LayoutElem
 		}
 		out[i].Children.Length = count
 		out[i].Children.Data = c.snapshotChildIndexRange(firstChild, count)
+	}
+	if len(out) < oldLen {
+		clear(reuse[len(out):oldLen])
 	}
 	return out
 }

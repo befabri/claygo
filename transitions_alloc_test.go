@@ -51,3 +51,56 @@ func TestSnapshotElementSubtreeZeroAlloc(t *testing.T) {
 		t.Errorf("snapshotElementSubtree allocates %v/call in steady state, want 0", avg)
 	}
 }
+
+// TestSnapshotElementSubtreeClearsShrunkReuseTail guards the memory-hygiene
+// side of reusing transition snapshots. If a subtree snapshot shrinks, the
+// returned slice is shorter but the backing array is still retained by
+// ElementSnapshotSubtree; stale tail slots must be cleared so removed elements'
+// UserData / strings / funcs are not kept reachable by the old backing array.
+func TestSnapshotElementSubtreeClearsShrunkReuseTail(t *testing.T) {
+	ctx := freshContext(t)
+	marker := new(int)
+
+	ctx.BeginLayout()
+	BoxID(ctx, "P", Decl{
+		Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(120), Height: SizingFixed(120)}, LayoutDirection: TopToBottom},
+	}, func() {
+		BoxID(ctx, "Kept", Decl{
+			Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(80), Height: SizingFixed(20)}},
+		}, nil)
+		BoxID(ctx, "Removed", Decl{
+			Layout:   LayoutConfig{Sizing: Sizing{Width: SizingFixed(80), Height: SizingFixed(20)}},
+			UserData: marker,
+		}, nil)
+	})
+	ctx.EndLayout(0.016)
+
+	root := ctx.getHashMapItem(HashString(String{Text: "P"}, 0).ID).LayoutElement
+	reuse := ctx.snapshotElementSubtree(root, nil)
+	if len(reuse) != 3 {
+		t.Fatalf("initial snapshot len = %d, want 3", len(reuse))
+	}
+	if reuse[2].Config.UserData != marker {
+		t.Fatalf("initial removed-child snapshot lost marker: %v", reuse[2].Config.UserData)
+	}
+
+	ctx.BeginLayout()
+	BoxID(ctx, "P", Decl{
+		Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(120), Height: SizingFixed(120)}, LayoutDirection: TopToBottom},
+	}, func() {
+		BoxID(ctx, "Kept", Decl{
+			Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(80), Height: SizingFixed(20)}},
+		}, nil)
+	})
+	ctx.EndLayout(0.016)
+
+	root = ctx.getHashMapItem(HashString(String{Text: "P"}, 0).ID).LayoutElement
+	oldBacking := reuse
+	reuse = ctx.snapshotElementSubtree(root, reuse)
+	if len(reuse) != 2 {
+		t.Fatalf("shrunk snapshot len = %d, want 2", len(reuse))
+	}
+	if got := oldBacking[2]; got.ID != 0 || got.Config.UserData != nil {
+		t.Fatalf("shrunk snapshot tail not cleared: ID=%d UserData=%v", got.ID, got.Config.UserData)
+	}
+}
