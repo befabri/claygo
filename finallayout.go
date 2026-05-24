@@ -61,8 +61,10 @@ func (c *Context) elementIsOffscreen(b BoundingBox) bool {
 
 // calculateFinalLayout sizes (x then y), then positions every element in the
 // tree, emits render commands into c.renderCommands, and returns the result.
-// Mirrors Clay__CalculateFinalLayout (oracle/clay.h ~line 2573).
-func (c *Context) calculateFinalLayout(deltaTime float32) RenderCommandArray {
+// Mirrors Clay__CalculateFinalLayout (oracle/clay.h ~line 2573); the upstream
+// deltaTime parameter isn't needed here because transition advancing lives in
+// advanceTransitions, not the layout pass.
+func (c *Context) calculateFinalLayout() RenderCommandArray {
 	c.sizeContainersAlongAxis(true)
 	aspectRatioElements := c.collectAspectRatioElements()
 	c.wrappedTextLines.Length = 0

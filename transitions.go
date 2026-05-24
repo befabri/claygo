@@ -25,10 +25,10 @@ type transitionDataInternal struct {
 	CurrentState     TransitionData
 	TargetState      TransitionData
 	ElementThisFrame *LayoutElement
-	// ElementSnapshot keeps the last completed frame's root element data outside
-	// the ephemeral layout arena, so exit transitions still clone the right
-	// element after BeginLayout reuses low-index slots for the next frame.
-	ElementSnapshot           LayoutElement
+	// ElementSnapshotSubtree keeps the last completed frame's element subtree
+	// (root at index 0, children as relative indices) outside the ephemeral
+	// layout arena, so exit transitions still clone the right elements after
+	// BeginLayout reuses arena slots for the next frame.
 	ElementSnapshotSubtree    []LayoutElement
 	OldParentRelativePosition Vector2
 	ElementID                 uint32
@@ -213,8 +213,6 @@ func (c *Context) markExitingElements() {
 		}
 		if len(data.ElementSnapshotSubtree) > 0 && data.ElementSnapshotSubtree[0].ID == data.ElementID {
 			data.ElementThisFrame = &data.ElementSnapshotSubtree[0]
-		} else if data.ElementSnapshot.ID == data.ElementID {
-			data.ElementThisFrame = &data.ElementSnapshot
 		}
 		if data.ElementThisFrame == nil {
 			// Nothing to drive — element was never registered, just drop.
@@ -477,7 +475,7 @@ func (c *Context) reattachExitingClone(parent *LayoutElement, cloneIdx int32, td
 		write++
 		foundNaturalSlot = true
 	}
-	for j := int32(0); j < oldLen; j++ {
+	for j := range oldLen {
 		if exitOrdering == ExitTransitionOrderingNaturalOrder && j == td.SiblingIndex {
 			c.layoutElementChildren.Data[write] = cloneIdx
 			write++
@@ -500,46 +498,71 @@ func (c *Context) snapshotTransitionElements() {
 	for i := int32(0); i < c.transitionDatas.Length; i++ {
 		data := c.transitionDatas.Get(i)
 		if data.ElementThisFrame != nil && data.ElementThisFrame.ID == data.ElementID {
-			subtree := c.snapshotElementSubtree(data.ElementThisFrame)
+			// Reuse last frame's backing array so a stable subtree snapshots
+			// without allocating. Safe because the previous snapshot was already
+			// consumed earlier this EndLayout (cloneElementsWithExitTransition),
+			// and ElementThisFrame now points at live/clone arena memory, never
+			// into ElementSnapshotSubtree.
+			subtree := c.snapshotElementSubtree(data.ElementThisFrame, data.ElementSnapshotSubtree)
 			if len(subtree) == 0 {
 				continue
 			}
 			data.ElementSnapshotSubtree = subtree
-			data.ElementSnapshot = subtree[0]
 		}
 	}
 }
 
-func (c *Context) snapshotElementSubtree(root *LayoutElement) []LayoutElement {
+// snapshotElementSubtree flattens root's live subtree into a single slice in
+// BFS order, reusing reuse's backing array when capacity allows. Each node's
+// Children.Data is rewritten to relative indices into the returned slice (a
+// sub-slice of the shared snapshotIndexIdentity buffer), so the result is
+// self-contained and survives BeginLayout rewinding the arena next frame.
+//
+// BFS order is what makes a node's children land in a contiguous index range,
+// which in turn lets Children.Data be an identity sub-slice instead of a fresh
+// allocation. Steady-state allocations: zero.
+func (c *Context) snapshotElementSubtree(root *LayoutElement, reuse []LayoutElement) []LayoutElement {
 	if root == nil {
 		return nil
 	}
-	out := make([]LayoutElement, 0, 1)
-	var copyNode func(*LayoutElement) int32
-	copyNode = func(src *LayoutElement) int32 {
-		idx := int32(len(out))
-		clone := *src
-		clone.Children.Data = nil
-		clone.Children.Length = 0
-		out = append(out, clone)
+	out := reuse[:0]
+	// Append the root keeping its (arena) Children temporarily so the BFS below
+	// can read the original child indices before we overwrite them.
+	out = append(out, *root)
 
-		if src.Children.Length == 0 {
-			return idx
-		}
-		childIndices := make([]int32, 0, int(src.Children.Length))
-		for i := int32(0); i < src.Children.Length; i++ {
-			srcChild := c.layoutElements.GetCheckCapacity(src.Children.Data[i])
+	for i := 0; i < len(out); i++ {
+		// Copy the slice header now; appending to out may reallocate and
+		// invalidate &out[i], but the arena child buffer it points at is stable.
+		arenaChildren := out[i].Children
+		firstChild := int32(len(out))
+		count := int32(0)
+		for j := int32(0); j < arenaChildren.Length; j++ {
+			srcChild := c.layoutElements.GetCheckCapacity(arenaChildren.Data[j])
 			if srcChild.ID == 0 {
 				continue
 			}
-			childIndices = append(childIndices, copyNode(srcChild))
+			out = append(out, *srcChild)
+			count++
 		}
-		out[idx].Children.Length = int32(len(childIndices))
-		out[idx].Children.Data = childIndices
-		return idx
+		out[i].Children.Length = count
+		out[i].Children.Data = c.snapshotChildIndexRange(firstChild, count)
 	}
-	copyNode(root)
 	return out
+}
+
+// snapshotChildIndexRange returns identity[start:start+count] (i.e. the values
+// start, start+1, …), growing the shared identity buffer as needed. Because the
+// buffer always satisfies identity[k] == k and is never mutated after growth,
+// every snapshot node can share it.
+func (c *Context) snapshotChildIndexRange(start, count int32) []int32 {
+	if count == 0 {
+		return nil
+	}
+	need := int(start + count)
+	for len(c.snapshotIndexIdentity) < need {
+		c.snapshotIndexIdentity = append(c.snapshotIndexIdentity, int32(len(c.snapshotIndexIdentity)))
+	}
+	return c.snapshotIndexIdentity[start : start+count]
 }
 
 // advanceTransitions runs the per-frame state-machine tick: for every live

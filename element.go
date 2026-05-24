@@ -272,7 +272,8 @@ func (c *Context) closeElement() {
 	childCount := openLE.Children.Length
 	childrenStart := c.layoutElementChildren.Length
 
-	if layoutCfg.LayoutDirection == LeftToRight {
+	switch layoutCfg.LayoutDirection {
+	case LeftToRight:
 		openLE.Dimensions.Width = leftRightPadding
 		openLE.MinDimensions.Width = leftRightPadding
 		for i := int32(0); i < childCount; i++ {
@@ -297,7 +298,7 @@ func (c *Context) closeElement() {
 		if !elementHasClipHorizontal {
 			openLE.MinDimensions.Width += childGap
 		}
-	} else if layoutCfg.LayoutDirection == TopToBottom {
+	case TopToBottom:
 		openLE.Dimensions.Height = topBottomPadding
 		openLE.MinDimensions.Height = topBottomPadding
 		for i := int32(0); i < childCount; i++ {

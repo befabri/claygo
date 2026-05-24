@@ -24,11 +24,9 @@ type Context struct {
 
 	// --- Per-frame ephemeral state ----------------------------------------
 	//
-	// The arena offset at the end of persistent init. BeginLayout resets the
-	// arena bump pointer to this offset before re-allocating the ephemeral
-	// arrays so per-frame memory does not leak.
-	arenaResetOffset uintptr
-
+	// These arrays are allocated once (allocateEphemeralMemory, at Initialize)
+	// and reused every frame: BeginLayout rewinds them via resetEphemeralMemory
+	// rather than reallocating, so a steady-state frame allocates nothing here.
 	layoutElements              Array[LayoutElement]
 	layoutElementChildren       Array[int32]
 	layoutElementChildrenBuffer Array[int32]
@@ -133,6 +131,15 @@ type Context struct {
 	// Clay__CalculateFinalLayout (oracle/clay.h ~line 2573, ~line 2918).
 	useStoredBoundingBoxes bool
 
+	// snapshotIndexIdentity is a shared, monotonically-growing scratch buffer
+	// holding the identity sequence [0,1,2,...]. snapshotElementSubtree stores
+	// each snapshot node in BFS order, so a node's children occupy a contiguous
+	// index range and its Children.Data can be a sub-slice of this identity
+	// buffer rather than a freshly-allocated []int32. The buffer is immutable
+	// once grown, so all snapshots can share it safely across frames; this is
+	// what keeps subtree snapshots allocation-free in steady state.
+	snapshotIndexIdentity []int32
+
 	// Boolean warnings: each is "fire the error once per Context lifetime".
 	// Mirrors Clay_BooleanWarnings in the C reference (subset).
 	warnHashMapCapacityExceeded       bool
@@ -231,7 +238,8 @@ func Initialize(arena Arena, layoutDimensions Dimensions, errorHandler ErrorHand
 	}
 	SetCurrentContext(ctx)
 	ctx.initializePersistentMemory()
-	ctx.initializeEphemeralMemory()
+	ctx.allocateEphemeralMemory()
+	ctx.resetEphemeralMemory()
 	// layoutElementsHashMap slots default to -1 ("empty bucket").
 	for i := int32(0); i < ctx.layoutElementsHashMap.Capacity; i++ {
 		ctx.layoutElementsHashMap.Data[i] = -1
@@ -266,17 +274,18 @@ func (c *Context) initializePersistentMemory() {
 	// 2252). We follow suit; a UI rarely has hundreds of concurrently
 	// transitioning elements and the per-entry footprint is small.
 	c.transitionDatas = NewArray[transitionDataInternal](maxTransitionDatas, a)
-	c.arenaResetOffset = c.arena.NextAllocation
 }
 
-// initializeEphemeralMemory allocates the per-frame arrays. Mirrors
-// Clay__InitializeEphemeralMemory (oracle/clay.h ~line 2220). Resets the
-// arena's bump pointer to arenaResetOffset first so previous-frame ephemeral
-// allocations are reclaimed.
-func (c *Context) initializeEphemeralMemory() {
+// allocateEphemeralMemory reserves the per-frame arrays once, at Initialize.
+// Mirrors the allocations Clay__InitializeEphemeralMemory makes (oracle/clay.h
+// ~line 2220), but upstream re-slices the same arena bytes every frame whereas
+// we must keep typed Go slices alive (NewArray heap-allocates for GC safety —
+// these structs hold pointers/funcs/strings). Re-making them each BeginLayout
+// would churn several MB of garbage per frame (each array is maxElementCount-
+// sized), so we allocate here and only reset lengths in resetEphemeralMemory.
+func (c *Context) allocateEphemeralMemory() {
 	maxElements := c.maxElementCount
 	a := &c.arena
-	a.NextAllocation = c.arenaResetOffset
 
 	c.layoutElementChildrenBuffer = NewArray[int32](maxElements, a)
 	c.layoutElements = NewArray[LayoutElement](maxElements, a)
@@ -288,7 +297,42 @@ func (c *Context) initializeEphemeralMemory() {
 	c.textElements = NewArray[int32](maxElements, a)
 	c.openClipElementStack = NewArray[int32](maxElements, a)
 	c.layoutElementClipElementIds = NewArray[int32](maxElements, a)
-	// Pre-grow to capacity-equivalent length so [idx] writes are valid.
+}
+
+// resetEphemeralMemory rewinds the per-frame arrays at the start of each
+// BeginLayout. The backing slices are reused (allocated once in
+// allocateEphemeralMemory), so for read-correctness resetting Length to 0 is
+// enough: every array is written before it is read within a frame, and the
+// high-index exit-clone slots are written before being read too.
+//
+// Pointer-bearing arrays (layoutElements, renderCommands, wrappedTextLines)
+// are additionally cleared over their previously-live range so stale entries
+// don't keep last frame's strings, image/UserData (`any`), handler funcs, etc.
+// reachable until they happen to be overwritten. The other ephemeral arrays
+// hold only int32 indices, so a plain Length reset is sufficient. The clear is
+// O(previous live length) and allocation-free; layoutElements' previous length
+// can be its full capacity in a frame that emitted exit-transition clones.
+//
+// layoutElementClipElementIds is special: it is read by element slot
+// (GetCheckCapacity) before its own slot is written, so it is grown to capacity
+// and zeroed every frame.
+func (c *Context) resetEphemeralMemory() {
+	clear(c.layoutElements.Data[:c.layoutElements.Length])
+	clear(c.renderCommands.Data[:c.renderCommands.Length])
+	clear(c.wrappedTextLines.Data[:c.wrappedTextLines.Length])
+
+	c.layoutElementChildrenBuffer.Length = 0
+	c.layoutElements.Length = 0
+	c.layoutElementChildren.Length = 0
+	c.openLayoutElementStack.Length = 0
+	c.renderCommands.Length = 0
+	c.layoutElementTreeRoots.Length = 0
+	c.wrappedTextLines.Length = 0
+	c.textElements.Length = 0
+	c.openClipElementStack.Length = 0
+
+	// Pre-grow to capacity-equivalent length so [idx] writes are valid, and zero
+	// it because it is indexed by element slot before that slot is written.
 	c.layoutElementClipElementIds.Length = c.layoutElementClipElementIds.Capacity
 	for i := int32(0); i < c.layoutElementClipElementIds.Length; i++ {
 		c.layoutElementClipElementIds.Data[i] = 0
@@ -327,7 +371,7 @@ func (c *Context) LayoutDimensions() Dimensions { return c.layoutDimensions }
 // parent via openLayoutElementStack[Length-2] without special-casing the top
 // of the tree.
 func (c *Context) BeginLayout() {
-	c.initializeEphemeralMemory()
+	c.resetEphemeralMemory()
 	c.generation++
 	c.dynamicElementIndex = 0
 	c.warnHashMapCapacityExceeded = false
@@ -366,6 +410,10 @@ func (c *Context) BeginLayout() {
 // EndLayout finalizes the current frame: closes the auto-root container,
 // runs the sizing solver, lays out children, and returns a sorted array of
 // render commands ready to draw.
+//
+// The returned RenderCommandArray is backed by a reused buffer and is only
+// valid until the next BeginLayout, which overwrites it. Consume or copy it
+// before starting the next frame. Mirrors upstream Clay's contract.
 //
 // Mirrors Clay_EndLayout (oracle/clay.h ~line 4448). The solver passes
 // (sizing x/y, positioning, render command emission) are implemented in
@@ -407,20 +455,20 @@ func (c *Context) EndLayout(deltaTime float32) RenderCommandArray {
 		// fresh bboxes onto the hashmap so the advance loop sees the new
 		// targets.
 		c.useStoredBoundingBoxes = false
-		c.calculateFinalLayout(deltaTime)
+		c.calculateFinalLayout()
 		// Advance the state machine using the freshly-recorded targets.
 		c.advanceTransitions(deltaTime)
 		// Second pass: re-emit with the now-current transition state
 		// overriding the bbox of each transitioning element.
 		c.useStoredBoundingBoxes = true
-		result := c.calculateFinalLayout(deltaTime)
+		result := c.calculateFinalLayout()
 		c.useStoredBoundingBoxes = false
 		c.snapshotTransitionElements()
 		c.rootResizedLastFrame = false
 		return result
 	}
 
-	result := c.calculateFinalLayout(deltaTime)
+	result := c.calculateFinalLayout()
 	c.rootResizedLastFrame = false
 	return result
 }

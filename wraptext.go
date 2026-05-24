@@ -175,7 +175,8 @@ func (c *Context) propagateTextHeights() {
 			stack = stack[:len(stack)-1]
 
 			layoutCfg := &cur.Config.Layout
-			if layoutCfg.LayoutDirection == LeftToRight {
+			switch layoutCfg.LayoutDirection {
+			case LeftToRight:
 				// Cross-axis (height) = max(child.height + padding, current)
 				for j := int32(0); j < cur.Children.Length; j++ {
 					child := c.layoutElements.Get(cur.Children.Data[j])
@@ -187,7 +188,7 @@ func (c *Context) propagateTextHeights() {
 					cur.Dimensions.Height = clampFloat32(childHWithPad,
 						layoutCfg.Sizing.Height.MinMax.Min, layoutCfg.Sizing.Height.MinMax.Max)
 				}
-			} else if layoutCfg.LayoutDirection == TopToBottom {
+			case TopToBottom:
 				// On-axis (height) = padding + sum(child.height) + gaps, clamped.
 				contentHeight := float32(layoutCfg.Padding.Top) + float32(layoutCfg.Padding.Bottom)
 				for j := int32(0); j < cur.Children.Length; j++ {
