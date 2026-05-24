@@ -4,14 +4,13 @@ import "testing"
 
 // Golden values harvested from the C reference implementation in
 // oracle/clay.h by linking against it with #define CLAY_IMPLEMENTATION
-// and printing the (id, offset, baseId) tuple for each input. See the
-// task notes / commit message for the harvesting program; we lock the
-// exact uint32s here so the Go port can never silently drift.
+// and printing the (id, offset, baseId) tuple for each input. These exact
+// uint32s lock the Go port against silent hash drift.
 
 func TestHashNumber(t *testing.T) {
 	cases := []struct {
-		name           string
-		offset, seed   uint32
+		name             string
+		offset, seed     uint32
 		wantID, wantBase uint32
 	}{
 		{"0,0", 0, 0, 1849449580, 0},

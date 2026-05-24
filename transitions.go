@@ -1,29 +1,18 @@
 package claygo
 
 // transitions.go ports Clay's transition state machine from oracle/clay.h.
-// Each element declared with Decl.Transition.Handler != nil gets a persistent
-// transitionDataInternal entry on Context.transitionDatas that survives
-// across frames. The state machine compares the previous frame's resolved
-// bounding box to this frame's, fires enter/transitioning/exit phases, and
-// calls the user's handler each tick to interpolate properties into
-// transitionDataInternal.currentState. The render emission pass reads that
-// state via applyStoredTransitionToBoundingBox to override the laid-out bbox.
+// Each element with Decl.Transition.Handler != nil gets a persistent
+// transitionDataInternal entry that survives across frames; the machine
+// compares last frame's resolved bbox to this frame's, runs the
+// enter/transitioning/exit phases, and calls the user's handler each tick to
+// interpolate into currentState, which the render pass reads back via
+// applyStoredTransitionToBoundingBox to override the laid-out bbox.
 //
-// What's ported:
-//   - The per-frame "register/refresh" branch (Clay__ConfigureOpenElementPtr
-//     ~line 2186-2214) — see configureOpenElement.
-//   - The render-time "useStoredBoundingBoxes" override (Clay__CalculateFinalLayout
-//     ~line 2918-2938) — see applyStoredTransitionToBoundingBox.
-//   - The post-layout advance loop (Clay_EndLayout ~line 4588-4720) — see
-//     advanceTransitions.
-//
-//   - cloneElementsWithExitTransition: clones a removed element's entire
-//     subtree into the high end of the layoutElements / layoutElementChildren
-//     arenas, reattaches non-floating clones to live parents according to
-//     exit.siblingOrdering, or registers floating/orphaned clones as tree
-//     roots. Mirrors Clay__CloneElementsWithExitTransition (oracle/clay.h
-//     ~line 4374) plus the subtree-clone step embedded in Clay_EndLayout
-//     (oracle/clay.h ~line 4505-4567).
+// The pieces map to upstream as: register/refresh in configureOpenElement
+// (Clay__ConfigureOpenElementPtr), the useStoredBoundingBoxes override in
+// applyStoredTransitionToBoundingBox, the advance loop in advanceTransitions
+// (Clay_EndLayout), and exit cloning in cloneElementsWithExitTransition. Each
+// function below carries its own oracle line references.
 
 // maxTransitionDatas is the persistent capacity of Context.transitionDatas.
 // Matches upstream's hard-coded 200 (oracle/clay.h ~line 2252).
@@ -273,28 +262,19 @@ func (c *Context) transitionDataWillExit(id uint32) bool {
 }
 
 // cloneElementsWithExitTransition copies each EXITING transition's previous-
-// frame subtree into the high end of layoutElements / layoutElementChildren
-// so the second final-layout pass can size, position, and render the subtree
-// one more frame (during which the user's exit handler animates it out).
+// frame subtree into the high end of layoutElements / layoutElementChildren so
+// the second final-layout pass can render it one more frame while the user's
+// exit handler animates it out.
 //
-// Mirrors Clay__CloneElementsWithExitTransition (oracle/clay.h ~line 4374) and
-// folds in the parent-reattachment logic the C version performs separately in
-// Clay_EndLayout (~line 4505-4567). Non-floating clones are inserted back into
-// a live parent's child list according to exit.siblingOrdering; floating or
-// orphaned clones become independent tree roots. layoutElements.Length /
-// layoutElementChildren.Length are bumped to capacity at the end so plain Get
-// reads can reach the high-index clone slots during the second layout pass.
+// Mirrors Clay__CloneElementsWithExitTransition (oracle/clay.h ~line 4374) plus
+// the reattachment logic Clay_EndLayout does separately (~line 4505-4567):
+// non-floating clones are spliced back into a live parent's child list per
+// exit.siblingOrdering, while floating or orphaned clones become independent
+// tree roots. Both array Lengths are bumped to capacity at the end so plain Get
+// reads reach the high-index clone slots during the second pass.
 //
-// Walks the transition table once. For each entry in EXITING state whose
-// ElementThisFrame still points at the previous frame's LayoutElement, runs a
-// BFS from that element: copies each visited element into the high-index slot
-// nextIndex (descending from capacity-1), reserves a contiguous high-index
-// block in layoutElementChildren for the parent's child indices, and rewires
-// the parent's Children.Data slice header to view that block. Each clone is
-// stamped Exiting=true.
-//
-// Returns silently after reporting ErrorTypeElementsCapacityExceeded if the
-// high-end region would collide with the live low-end region.
+// Reports ErrorTypeElementsCapacityExceeded and bails if the high-end region
+// would collide with the live low-end region.
 func (c *Context) cloneElementsWithExitTransition() {
 	if c.transitionDatas.Length == 0 {
 		return
@@ -328,8 +308,8 @@ func (c *Context) cloneElementsWithExitTransition() {
 
 		// Defensive capacity check: refuse to clone if the high-end region
 		// would overlap the live low-end region. The C version doesn't check
-		// because the bigger clone uses Add() (which would soft-fail at
-		// capacity); we're explicit so callers get a clean error.
+		// because its clone path uses Add(), which would soft-fail at capacity;
+		// we're explicit so callers get a clean error.
 		if nextIndex < c.layoutElements.Length {
 			c.reportError(ErrorTypeElementsCapacityExceeded,
 				"Clay has run out of space for exit-transition subtree clones in layoutElements. Try using SetMaxElementCount() with a higher value.")

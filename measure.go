@@ -8,11 +8,11 @@ package claygo
 //   - Clay__MeasureTextCached                  (~line 1639)
 //
 // The cache is keyed on (text contents, fontId, fontSize, letterSpacing); a
-// linear probe chain in measureTextHashMap (bucket -> head index) walks
-// measureTextHashMapInternal entries via their NextIndex field. Each cache
-// item owns a linked list of MeasuredWord entries, stored as indices into the
-// measuredWords array. Word slots that age out are pushed onto a free list
-// for reuse.
+// bucket chain in measureTextHashMap (bucket -> head index) walks
+// measureTextHashMapInternal entries via their NextIndex field. Each cache item
+// owns a linked list of MeasuredWord entries, stored as indices into the
+// measuredWords array. Word slots that age out are pushed onto a free list for
+// reuse.
 
 // MeasuredWord is a single word-or-newline run from the measured text.
 // Mirrors Clay__MeasuredWord (oracle/clay.h ~line 1287).
@@ -47,9 +47,8 @@ type MeasureTextCacheItem struct {
 // against the C oracle compiled with -DCLAY_DISABLE_SIMD; see measure_test.go
 // for the locked-down golden values.
 //
-// Also note: upstream mixes in fontId, fontSize, and letterSpacing — but
-// *not* lineHeight. The task description suggested folding in lineHeight as
-// well, but we follow the C reference verbatim so cache hits/misses match.
+// Also note: upstream mixes in fontId, fontSize, and letterSpacing, but not
+// lineHeight. We follow the C reference verbatim so cache hits/misses match.
 func hashStringContentsWithConfig(text string, cfg *TextElementConfig) uint32 {
 	// Contents-only HashData: Bob-Jenkins one-at-a-time fold over bytes,
 	// then take mod UINT32_MAX (i.e. clamp 0xFFFFFFFF -> 0).
@@ -101,9 +100,8 @@ func (c *Context) addMeasuredWord(word MeasuredWord, prev *MeasuredWord) *Measur
 
 // measureTextCached returns the cached measurement for (text, cfg),
 // populating the cache on first use. Mirrors Clay__MeasureTextCached
-// (oracle/clay.h ~line 1639). The returned pointer aliases into the
-// measureTextHashMapInternal array and is invalidated by the next Set/Add on
-// that array; callers should consume it before further cache mutations.
+// (oracle/clay.h ~line 1639). The returned pointer aliases an internal cache
+// entry; callers should not retain it across cache mutations or frames.
 //
 // If the measure-text callback is not installed the function reports
 // ErrorTypeTextMeasurementFunctionNotProvided and returns &c.measureTextCacheDefault.
@@ -118,9 +116,8 @@ func (c *Context) measureTextCached(text string, cfg *TextElementConfig) *Measur
 	}
 
 	id := hashStringContentsWithConfig(text, cfg)
-	// Upstream's bucket modulus is `maxMeasureTextCacheWordCount / 32`. This is
-	// deliberately smaller than the entry capacity so the chains are short but
-	// many. Keep that exactly.
+	// Upstream's bucket modulus is maxMeasureTextCacheWordCount / 32. Keep that
+	// exactly so cache bucket placement matches the C reference.
 	bucketCount := c.maxMeasureTextCacheWordCount / 32
 	if bucketCount <= 0 {
 		return &c.measureTextCacheDefault

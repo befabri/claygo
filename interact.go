@@ -1,19 +1,10 @@
 package claygo
 
 // interact.go ports Clay's pointer / hover / element-lookup API:
-//   - SetPointerState: each frame, the caller updates the pointer position
-//     and button state. Clay walks the laid-out tree to figure out which
-//     elements the pointer is currently over, transitions the press/release
-//     state machine, and fires registered OnHover callbacks.
-//   - Hovered: returns true if the pointer is over the currently-open
-//     element during BeginLayout..EndLayout, using the stored bbox from the
-//     previous frame.
-//   - PointerOver: returns true if the pointer is over the element with the
-//     given id this frame.
-//   - OnHover: registers a callback fired by SetPointerState whenever the
-//     pointer is over the currently-open element.
-//   - GetPointerOverIds: snapshot of the ids the pointer is currently over.
-//   - GetElementData: looks up bbox + found flag for an arbitrary id.
+// SetPointerState recomputes which elements the pointer is over and fires
+// OnHover callbacks; the Hovered / PointerOver / GetPointerOverIds /
+// GetElementData queries read that state back. Each function documents itself
+// below.
 //
 // Mirrors Clay_SetPointerState (oracle/clay.h ~line 4084), Clay_Hovered
 // (~4808), Clay_PointerOver (~4834), Clay_OnHover (~4822), and the inline
@@ -68,12 +59,12 @@ func (c *Context) SetPointerState(pos Vector2, isDown bool) {
 	}
 }
 
-// collectPointerOver does an iterative BFS from rootIdx, appending every
+// collectPointerOver does an iterative DFS from rootIdx, appending every
 // element whose bbox contains the pointer position to c.pointerOverIds. It
 // returns true when any element in the tree was hit.
 func (c *Context) collectPointerOver(rootIdx int32) bool {
-	// Scratch stack reused across calls — uses Go slice rather than the
-	// arena buffers (which are still holding solver state at this point).
+	// Scratch stack uses a Go slice rather than the arena buffers, which are
+	// still holding solver state at this point.
 	stack := []int32{rootIdx}
 	found := false
 	for len(stack) > 0 {

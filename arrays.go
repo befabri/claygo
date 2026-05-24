@@ -5,8 +5,8 @@ import "reflect"
 // Array is a fixed-capacity typed slice with arena-enforced capacity. Mirrors
 // Clay's CLAY__ARRAY_DEFINE pattern: callers allocate via NewArray with a known
 // capacity, then Add/Get/Set/RemoveSwapback at runtime. Out-of-range Get/Add
-// returns a pointer to a zero sentinel rather than panicking, matching the C
-// original's "soft fail" semantics so chained calls don't NPE.
+// return a pointer to a zero sentinel rather than panicking, matching the C
+// original's "soft fail" semantics so chained calls stay safe.
 type Array[T any] struct {
 	Capacity int32
 	Length   int32

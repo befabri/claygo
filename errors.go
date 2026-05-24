@@ -14,7 +14,7 @@ type ErrorData struct {
 // dropped (no panic, no log). A reasonable minimum is to forward to log.Println
 // during development:
 //
-//	ErrorHandler{Func: func(e claygo.ErrorData) { log.Printf("[clay] %s: %s", e.Type, e.Text) }}
+//	ErrorHandler{Func: func(e claygo.ErrorData) { log.Printf("[clay] type=%d: %s", e.Type, e.Text) }}
 type ErrorHandler struct {
 	Func     func(err ErrorData)
 	UserData any

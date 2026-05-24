@@ -107,11 +107,8 @@ func TestTransitionsMultiElementSubtreeExit(t *testing.T) {
 		t.Errorf("frame 2: child rectangle missing from render commands (subtree clone broken)")
 	}
 
-	// Both clones should be reachable as floating-attached tree roots
-	// anchored to the auto-root, so they preserve their previous on-screen
-	// positions instead of stacking at (0,0). The parent in frame 1 sits at
-	// X=0; with the exit animation having just started (ElapsedTime = 0 for
-	// the first interpolator call) the rendered X should still be near 0.
+	// The cloned commands should retain valid sizes rather than degenerating
+	// when the subtree is recreated for exit rendering.
 	if parentCmd != nil && (parentCmd.BoundingBox.Width <= 0 || parentCmd.BoundingBox.Height <= 0) {
 		t.Errorf("frame 2: parent clone has degenerate size %v", parentCmd.BoundingBox)
 	}

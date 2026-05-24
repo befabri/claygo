@@ -118,10 +118,8 @@ func TestDebugViewGlobalsAreCustomizable(t *testing.T) {
 	}
 }
 
-// scene is a small reusable scene used by the interactivity tests
-// below: an outer container with two named child boxes. Using a
-// dedicated builder gives the tests stable element ids to query
-// against the debug-panel state.
+// debugTestScene builds a small scene used by the interactivity tests below,
+// giving them stable element ids to query against the debug-panel state.
 func debugTestScene(ctx *Context) {
 	BoxID(ctx, "Outer", Decl{
 		Layout: LayoutConfig{

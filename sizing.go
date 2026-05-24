@@ -23,7 +23,7 @@ func (c *Context) sizeContainersAlongAxis(xAxis bool) {
 	// Reuse openLayoutElementStack and layoutElementChildrenBuffer as scratch
 	// arrays during the solver, matching C. Both have already been cleared by
 	// closeElement when the layout finished building; reset their lengths
-	// defensively in case future waves leave them dirty.
+	// defensively in case future changes leave them dirty.
 	bfs := &c.layoutElementChildrenBuffer
 	resizable := &c.openLayoutElementStack
 

@@ -11,7 +11,8 @@ package claygo
 // frames (for example, items in a loop without a stable key), each slot keeps
 // its position-derived id while the contents change. Hover state and
 // transitions then attach to the position, not the item. Inside loops over
-// dynamic data, prefer BoxIDOffset(c, name, uint32(i), ...).
+// dynamic or reorderable data, prefer BoxIDOffset with an offset derived from a
+// stable item key.
 //
 // Example:
 //

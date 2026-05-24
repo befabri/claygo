@@ -98,8 +98,8 @@ func TestBoxIDOffsetProducesDistinctElements(t *testing.T) {
 
 // TestOffscreenCullingSkipsEmission places an in-view red square and an
 // out-of-view green square (offset far past the right edge of the viewport
-// via a floating element), then verifies the green RECTANGLE is NOT
-// emitted when culling is on and IS emitted when culling is off.
+// via a floating element), then verifies culling suppresses only the
+// out-of-view rectangle.
 func TestOffscreenCullingSkipsEmission(t *testing.T) {
 	red := RGBA(255, 0, 0, 255)
 	green := RGBA(0, 255, 0, 255)
@@ -165,11 +165,9 @@ func TestOffscreenCullingSkipsEmission(t *testing.T) {
 	}
 }
 
-// TestWrapEmptyLineAtStartEdgeCase exercises the wrap-pass scenario the
-// reviewer flagged: text where lineStartOffset+lineLengthChars==0 (the
-// first character is a newline). With the C-matching MAX(idx, 0) clamp,
-// reading text[0] is safe — the first character is `\n`, not a space,
-// so the trim-trailing-space branch correctly stays off.
+// TestWrapEmptyLineAtStartEdgeCase exercises wrapping text whose first
+// character is a newline. With the C-matching MAX(idx, 0) clamp, reading
+// text[0] is safe and the trim-trailing-space branch stays off.
 func TestWrapEmptyLineAtStartEdgeCase(t *testing.T) {
 	ctx := freshContext(t)
 	ctx.BeginLayout()
@@ -230,7 +228,7 @@ func TestClipAncestorRecordsOnOpen(t *testing.T) {
 	if got := ctx.layoutElementClipElementIds.Data[1]; got != 0 {
 		t.Errorf("TopLevel clip-ancestor = %d, want 0", got)
 	}
-	// Clipper itself (index 2) is also not inside a clip — it IS the clip.
+	// Clipper itself (index 2) is also not inside a clip; it is the clip container.
 	if got := ctx.layoutElementClipElementIds.Data[2]; got != 0 {
 		t.Errorf("Clipper's own clip-ancestor = %d, want 0", got)
 	}

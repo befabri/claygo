@@ -67,17 +67,10 @@ func (c *Context) SetExternalScrollHandlingEnabled(enabled bool) {
 	c.externalScrollHandlingEnabled = enabled
 }
 
-// LocalAutoID returns a per-frame monotonically increasing index that the
-// caller can fold into HashStringWithOffset to build stable element IDs
-// for items inside a loop. Mirrors upstream's dynamicElementIndex.
-//
-// Pattern:
-//
-//	for i, item := range items {
-//	    claygo.BoxIDOffset(c, "Row", c.LocalAutoID(), claygo.Decl{...}, func(){})
-//	}
-//
-// Each call advances the counter; BeginLayout resets it to zero.
+// LocalAutoID returns a per-frame monotonically increasing offset for building
+// declaration-order IDs with HashStringWithOffset or BoxIDOffset. It is stable
+// only when call order is stable; for reorderable data, derive the offset from
+// item identity instead. Mirrors upstream's dynamicElementIndex.
 func (c *Context) LocalAutoID() uint32 {
 	c.dynamicElementIndex++
 	return c.dynamicElementIndex

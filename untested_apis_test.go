@@ -5,11 +5,6 @@ import (
 	"testing"
 )
 
-// untested_apis_test.go closes the F-wave gaps surfaced by the gap-audit:
-// public APIs and enum branches that previously had no dedicated test
-// coverage even though they're plumbed through the code. Each test pins
-// the observable behavior so future changes can't silently regress it.
-
 // TestGetScrollContainerDataReturnsFields exercises the public scroll
 // query: declare a clip container, end layout, look up its data, and
 // assert every field of the returned ScrollContainerData is plausible.
@@ -149,7 +144,7 @@ func TestExternalScrollHandlingQueriesOffsetWithoutMovingChildren(t *testing.T) 
 }
 
 // TestUpdateScrollContainersWheel pins the wheel-scroll path: scrollDelta
-// translates the inner-most pointer-over scroll container by deltaY*10
+// translates the innermost pointer-over scroll container by deltaY*10
 // (and similarly on x) when content is bigger than the container.
 func TestUpdateScrollContainersWheel(t *testing.T) {
 	ctx := freshContext(t)

@@ -2,35 +2,17 @@ package claygo
 
 import "reflect"
 
-// MinMemorySize returns the byte size of the arena that Initialize requires
-// for the current max-element and measure-text word-cache counts. Package-level
-// SetMaxElementCount / SetMaxMeasureTextCacheWordCount calls made before
-// Initialize update the defaults; after Initialize, MinMemorySize follows the
-// current Context's configured caps.
+// MinMemorySize returns the arena byte size Initialize requires for the
+// current max-element and word-cache counts. Package-level SetMaxElementCount /
+// SetMaxMeasureTextCacheWordCount before Initialize change the defaults; after
+// Initialize it follows the Context's configured caps.
 //
-// Mirrors Clay_MinMemorySize (oracle/clay.h ~line 4026): we sum the logical
-// byte footprint of every Array reserved by Initialize (both persistent and
-// ephemeral) plus a small slack for alignment and future fields. The arena is a
-// capacity budget; Array payloads live in typed Go slices so the GC can see Go
-// pointers stored in Clay structs.
-//
-// With the stock defaults (maxElementCount=8192, maxMeasureTextWordCacheSize=16384)
-// the foundation port lands at ~7.4 MB. The Go capacity budget is higher than
-// the upstream C ~3.5 MB because LayoutElement carries the full Decl (with
-// transition-handler func pointers, image/custom interface fields, etc.)
-// inline rather than in a union with the text-leaf payload, and Clay's
-// RenderCommand is similarly fattened by `any` payload fields. Memory budgets
-// scale linearly with maxElementCount and maxMeasureTextWordCacheSize.
-//
-// The slack term covers:
-//   - alignUp padding between heterogeneously-aligned allocations (~16 B per alloc)
-//   - 64 B cacheline alignment for the arena base
-//   - 4 * maxElementCount bytes of headroom for small scratch structures and
-//     future upstream fields that are cheaper to budget for than to expose as
-//     a breaking MinMemorySize change.
-//
-// Keeping the figure conservatively large reduces churn when upstream grows
-// Context internals.
+// Mirrors Clay_MinMemorySize (oracle/clay.h ~line 4026): the summed footprint
+// of every Array reserved by Initialize plus slack for alignment and future
+// fields (see minMemorySizeFor). The budget runs higher than upstream's ~3.5 MB
+// (~7.4 MB at the stock defaults) because LayoutElement embeds the full Decl
+// inline rather than in a union and RenderCommand carries `any` payload fields;
+// it scales linearly with both caps.
 func MinMemorySize() uint {
 	maxElements := defaultMaxElementCount
 	maxWords := defaultMaxMeasureTextWordCacheSize

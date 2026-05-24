@@ -10,9 +10,8 @@ type LayoutConfig struct {
 	LayoutDirection LayoutDirection
 }
 
-// TextElementConfig controls text rendering and measurement settings. The
-// renderer is responsible for honoring FontID, FontSize, LetterSpacing,
-// LineHeight, WrapMode, and TextAlignment.
+// TextElementConfig controls text measurement, wrapping, alignment, and render
+// styling.
 type TextElementConfig struct {
 	UserData      any
 	TextColor     Color

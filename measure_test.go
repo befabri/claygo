@@ -4,10 +4,9 @@ import (
 	"testing"
 )
 
-// deterministicMeasureTextForTest is a byte-identical copy of
-// golden_test.go::deterministicMeasureText. We duplicate rather than alias
-// because that function is in a *_test.go file and we want this file to be
-// self-contained against future churn in golden_test.go.
+// deterministicMeasureTextForTest mirrors golden_test.go's deterministicMeasureText.
+// It is duplicated so these lower-level tests remain self-contained if golden
+// coverage changes.
 func deterministicMeasureTextForTest(text StringSlice, cfg *TextElementConfig, _ any) Dimensions {
 	charW := float32(int(float32(cfg.FontSize) * 0.55))
 	chars := len(text.Text)
@@ -244,13 +243,13 @@ func TestMeasureTextCachedWordCount(t *testing.T) {
 		text      string
 		wantWords int32
 	}{
-		{"no-spaces", "abc", 1},                    // trailing run only
-		{"one-space", "abc def", 2},                // one space + trailing run
-		{"two-spaces", "abc def ghi", 3},           // two spaces + trailing run
-		{"trailing-space", "abc ", 1},              // space-terminated word, no trailing run
-		{"single-newline", "abc\ndef", 3},          // content + synthetic + trailing
-		{"newline-only", "\n", 1},                  // just the synthetic marker
-		{"leading-space", " abc", 2},               // space (empty pre-word marker) + trailing run
+		{"no-spaces", "abc", 1},           // trailing run only
+		{"one-space", "abc def", 2},       // one space + trailing run
+		{"two-spaces", "abc def ghi", 3},  // two spaces + trailing run
+		{"trailing-space", "abc ", 1},     // space-terminated word, no trailing run
+		{"single-newline", "abc\ndef", 3}, // content + synthetic + trailing
+		{"newline-only", "\n", 1},         // just the synthetic marker
+		{"leading-space", " abc", 2},      // space (empty pre-word marker) + trailing run
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -143,9 +143,8 @@ func (c *Context) wrapTextElements() {
 }
 
 // propagateTextHeights walks the layout tree post-order, recomputing parent
-// heights from their children. Necessary after text wrapping (and aspect-
-// ratio scaling, when ported) grows leaves taller than they were at
-// close-element time. Mirrors C 2649-2697.
+// heights from their children. Necessary after text wrapping grows leaves
+// taller than they were at close-element time. Mirrors C 2649-2697.
 func (c *Context) propagateTextHeights() {
 	type frame struct {
 		element *LayoutElement

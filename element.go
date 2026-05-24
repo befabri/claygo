@@ -78,8 +78,8 @@ func (c *Context) openElementWithIDOffset(id string, offset uint32) {
 
 // recordClipAncestor stamps layoutElementClipElementIds[idx] with the id of
 // the innermost open clip element (top of openClipElementStack), or 0 if
-// the element isn't inside a clip. Called by both openElement and
-// openElementWithID immediately after the new element is pushed.
+// the element isn't inside a clip. Called by the element-open helpers
+// immediately after the new element is pushed.
 func (c *Context) recordClipAncestor(idx int32) {
 	if idx < 0 || idx >= c.layoutElementClipElementIds.Capacity {
 		return
@@ -170,8 +170,8 @@ func (c *Context) configureOpenElement(decl Decl) {
 					c.reportError(ErrorTypeFloatingContainerParentNotFound,
 						"A floating element was declared with a parentId, but no element with that ID was found this frame. The parent must be declared (via BoxID with that string id) earlier in the same frame, before the floating element opens.")
 				} else if parentItem.LayoutElement != nil {
-					// Find parent's index by pointer-walk; layoutElements is a
-					// slice and the LayoutElement* it stores is into it.
+					// Find the parent's index by pointer-walking layoutElements;
+					// parentItem.LayoutElement points into that backing array.
 					for i := int32(0); i < c.layoutElements.Length; i++ {
 						if c.layoutElements.Get(i) == parentItem.LayoutElement {
 							if i < c.layoutElementClipElementIds.Length {

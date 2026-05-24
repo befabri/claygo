@@ -3,32 +3,18 @@ package claygo
 import "strconv"
 
 // debugview.go ports Clay's debug overlay panel (Clay__RenderDebugView at
-// oracle/clay.h ~line 3523). The overlay is a right-hand side panel that
-// shows:
+// oracle/clay.h ~line 3523): a right-hand side panel with a "Clay Debug Tools"
+// header, the live element tree as a one-row-per-element list (name,
+// dimensions, Offscreen / Duplicate-ID markers, config chips, and a +/-
+// collapse button on non-leaf rows), and a scrollable inspector pane that
+// shows the selected element's bbox / layout / sizing / floating / clip /
+// border breakdown.
 //
-//  1. A header bar with the "Clay Debug Tools" title.
-//  2. The live element tree as a list, one row per element. Each row shows
-//     the element name, its dimensions, optional "Offscreen" / "Duplicate
-//     ID" markers, and a chip set for the configs the element opted into
-//     (Background, Border, Floating, Clip, ...). Non-leaf rows get a +/-
-//     collapse button.
-//  3. A scrollable inspector pane underneath the element list. When a row
-//     is selected (click), the inspector renders bbox / layout / sizing /
-//     padding / floating / clip / border breakdowns for that element.
-//
-// Interactivity:
-//
-//   - Hover-to-highlight: the row whose y range contains the pointer
-//     becomes the "highlighted" row, and a translucent rectangle is
-//     overlaid on the actual scene element so the user can see the
-//     correspondence between the row and the live UI.
-//   - Click-to-select: clicking a row stores the element's id on
-//     Context.debugSelectedElementID. Selection persists across frames.
-//   - Collapse-per-row: clicking the +/- button toggles the row's
-//     children in/out of view. State lives in Context.debugCollapsed.
-//
-// All elements declared by the debug view get string ids prefixed with
-// "Clay__Debug_" so they cannot collide with anything the user declared.
+// Interactivity: hovering a row highlights the matching scene element with a
+// translucent overlay; clicking selects it (Context.debugSelectedElementID,
+// persisted across frames); the +/- button toggles a row's children
+// (Context.debugCollapsed). Every element the panel declares uses a
+// "Clay__Debug_" id prefix so it can't collide with user elements.
 
 // DebugViewWidth is the fixed pixel width of the debug side panel.
 // Mirrors Clay__debugViewWidth (oracle/clay.h:3952).
@@ -275,9 +261,9 @@ func (c *Context) renderDebugView() {
 	}
 
 	// closeElement was called by Box; the open stack is now back to the
-	// [root, root] sentinel. Pop one of the sentinels so the layout
-	// machinery is in the same state EndLayout expected (empty stack
-	// after its own closeElement call).
+	// [root, root] sentinel. Clear it so the layout machinery is in the
+	// same state EndLayout expected (empty stack after its own
+	// closeElement call).
 	c.openLayoutElementStack.Length = 0
 }
 
@@ -419,13 +405,9 @@ func (c *Context) debugElementRow(idx int32, depth int32, rowEntries *[]debugRow
 	// offscreen detection, and to fetch the displayed string id.
 	item := c.getHashMapItem(el.ID)
 
-	// offscreen is computed from the most recent bbox recorded on the
-	// hashmap item. On the first frame the bbox is zero, which our
-	// elementIsOffscreen treats as on-screen at (0,0) with zero size →
-	// since 0+0 <= 0, elementIsOffscreen returns true. To avoid every
-	// element flashing "Offscreen" on the first frame, also require the
-	// item to have appeared at least once before (bbox non-zero OR
-	// generation > 1).
+	// offscreen is computed from the most recent bbox recorded on the hashmap
+	// item. Before the first final-layout pass, bboxes may still be zero-value,
+	// so only show the marker after a non-zero bbox has been recorded.
 	offscreen := false
 	if item != nil && (item.BoundingBox.Width > 0 || item.BoundingBox.Height > 0) {
 		offscreen = c.elementIsOffscreen(item.BoundingBox)
@@ -846,8 +828,7 @@ func ftoi(f float32) string {
 	return strconv.Itoa(int(f))
 }
 
-// boolStr returns "true" / "false" for booleans (Go's strconv.FormatBool
-// equivalent, lifted to avoid an extra import for a one-use call).
+// boolStr formats a bool as "true" / "false".
 func boolStr(b bool) string {
 	if b {
 		return "true"

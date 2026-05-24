@@ -51,8 +51,8 @@ type Context struct {
 	textElements Array[int32]
 
 	// pointerOverIds is the per-frame list of element ids the pointer is
-	// currently inside, populated by SetPointerState. Tree-root order means
-	// deeper / on-top elements appear earlier in the list.
+	// currently inside, populated by SetPointerState. Higher-z tree roots are
+	// scanned first.
 	pointerOverIds Array[ElementID]
 
 	// openClipElementStack tracks the chain of currently-open clip ids
@@ -76,7 +76,7 @@ type Context struct {
 
 	// dynamicElementIndex is a per-frame counter for generating stable
 	// auto-IDs inside loops without the macro tricks Clay's C side uses.
-	// LocalAutoID() / GetLocalAutoID() advance it. Resets in BeginLayout.
+	// LocalAutoID() advances it. Resets in BeginLayout.
 	dynamicElementIndex uint32
 
 	// rootResizedLastFrame is true when SetLayoutDimensions changed the viewport
@@ -160,18 +160,11 @@ type Context struct {
 	warnings        []ErrorData
 	warningsEnabled bool
 
-	// Genuinely-unported Clay_Context fields (everything else from upstream
-	// is implemented above):
-	//   - layoutElementIdStrings: pool of id strings for debug rendering.
-	//     The Go port reaches the hashmap items for names rather than
-	//     mirroring this pool. Add if debug-tool perf becomes an issue.
-	//   - dynamicStringData / dynamicElementIndexBaseHash: Clay__IntToString
-	//     write buffer + hash seed. The Go debug view uses strconv.Itoa.
-	//   - layoutElementTreeNodeArray1, treeNodeVisited, reusableElementIndexBuffer:
-	//     fixed-capacity scratch slots used by upstream's DFS. The Go port
-	//     uses per-call Go slices instead; equivalent behavior, less arena.
-	//   - exitingElementsLength / exitingElementsChildrenLength: replaced
-	//     by the high-index-region trick in cloneElementsWithExitTransition.
+	// Several upstream Clay_Context fields are intentionally absent: the C
+	// debug string pools (layoutElementIdStrings, dynamicStringData) — the Go
+	// debug view reads names off the hashmap and uses strconv — and the
+	// fixed-capacity DFS scratch arrays (layoutElementTreeNodeArray1 etc.),
+	// which the Go port replaces with per-call slices.
 }
 
 // layoutElementTreeRoot is one entry in Context.layoutElementTreeRoots:

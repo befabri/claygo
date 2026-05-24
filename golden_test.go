@@ -13,9 +13,6 @@ import (
 // pure-Go layout, marshal the result into the same JSON shape that
 // oracle/main.c emits, parse the committed testdata/<name>.golden.json
 // produced by the C upstream, and compare the two as Go structs.
-//
-// While the layout solver is still being ported these tests will fail with a
-// "got 0 commands, want N" diff — that is the intended TDD signal.
 
 // goldenViewport is the layout dimensions every scene runs against. Matches
 // the C oracle's viewport so positions and grow-shares match byte-for-byte.
@@ -196,7 +193,7 @@ func renderCommandTypeName(t RenderCommandType) string {
 	}
 }
 
-func colorArr(c Color) [4]float32     { return [4]float32{c.R, c.G, c.B, c.A} }
+func colorArr(c Color) [4]float32 { return [4]float32{c.R, c.G, c.B, c.A} }
 func cornerArr(c CornerRadius) [4]float32 {
 	return [4]float32{c.TopLeft, c.TopRight, c.BottomLeft, c.BottomRight}
 }

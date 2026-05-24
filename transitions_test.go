@@ -79,9 +79,8 @@ func TestTransitionsRegisterEntry(t *testing.T) {
 // time so the handler interpolates partway. The final bbox X must be
 // strictly between the frame-1 and frame-2 positions.
 //
-// This mirrors upstream's "elapsed advanced after handler" ordering at
-// oracle/clay.h ~line 4707, which means a single delta-step worth of
-// transition progress is only visible on the frame AFTER the target change.
+// This mirrors upstream's "elapsed advanced after handler" ordering: transition
+// progress from a delta step is visible on the frame after the target change.
 func TestTransitionsInterpolatesXAcrossFrames(t *testing.T) {
 	ctx := freshContext(t)
 
@@ -298,9 +297,8 @@ func TestEaseOutAppliesTargetForZeroDurationAndBorderWidth(t *testing.T) {
 }
 
 // TestTransitionsExitTriggersWhenElementRemoved verifies that an element
-// declared with transition.exit.setFinalState in frame 1 — but absent from
-// frame 2 — runs at least one frame of exit transition (i.e. its
-// transitionData entry survives past the removal, in state EXITING).
+// declared with Transition.Exit.SetFinalState in frame 1, but absent from frame
+// 2, runs at least one frame of exit transition.
 func TestTransitionsExitTriggersWhenElementRemoved(t *testing.T) {
 	ctx := freshContext(t)
 

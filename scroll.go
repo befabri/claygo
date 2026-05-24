@@ -31,7 +31,7 @@ type scrollContainerDataInternal struct {
 
 // UpdateScrollContainers advances per-clip-container scroll positions:
 //   - momentum decays toward zero each frame
-//   - wheel scroll (scrollDelta) translates the inner-most clip the
+//   - wheel scroll (scrollDelta) translates the innermost clip the
 //     pointer is over
 //   - if enableDragScrolling is true and the pointer is held inside a
 //     clip, the container scrolls to follow drag; on release, momentum

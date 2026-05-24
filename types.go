@@ -14,9 +14,8 @@ func MakeString(s string) String { return String{Text: s} }
 // Length returns the byte length of the string.
 func (s String) Length() int32 { return int32(len(s.Text)) }
 
-// StringSlice is a slice of a String produced during text wrapping or word
-// measurement. Base points at the full source string so the cache can key on
-// slice identity, not just contents.
+// StringSlice is a slice of text passed to measurement/rendering callbacks.
+// Base points at the full source string when available.
 type StringSlice struct {
 	Text string
 	Base string
@@ -162,7 +161,7 @@ type Arena struct {
 }
 
 // ScrollContainerData is the runtime state of a scrolling element, returned by
-// Context.ScrollContainerData.
+// Context.GetScrollContainerData.
 type ScrollContainerData struct {
 	ScrollPosition            *Vector2
 	ScrollContainerDimensions Dimensions

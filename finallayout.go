@@ -1,15 +1,12 @@
 package claygo
 
 // finallayout.go ports the second half of Clay__CalculateFinalLayout
-// (oracle/clay.h ~line 2573): after the sizing solver has decided how big
-// each element is, this pass walks the tree depth-first and (a) decides
-// each element's bounding-box position based on its parent's padding,
-// child gap and child alignment, then (b) emits the per-element render
-// commands in z-order.
-//
-// This file also handles the final aspect-ratio corrections, root z-sort,
-// clip scissor emission, floating-root positioning, and render-command
-// generation for every command type Clay exposes.
+// (oracle/clay.h ~line 2573): once the sizing solver has decided how big each
+// element is, this pass walks the tree depth-first to position each element
+// (from its parent's padding, child gap, and alignment) and then emits the
+// per-element render commands in z-order. It also handles the final
+// aspect-ratio corrections, root z-sort, clip scissor emission, and
+// floating-root positioning.
 
 // layoutTreeNode is one frame of the DFS stack used during final positioning.
 // Mirrors Clay__LayoutElementTreeNode (oracle/clay.h ~line 1232).
