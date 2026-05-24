@@ -446,6 +446,11 @@ func (c *Context) cloneElementsWithExitTransition() {
 	}
 
 	if wroteClone {
+		// Record the clone high-end [nextIndex+1, capacity) so next frame's
+		// resetEphemeralMemory clears it (and the live low-end) without touching
+		// the untouched middle. Clones were written downward from capacity-1, so
+		// nextIndex+1 is the lowest occupied slot.
+		c.prevLayoutElementsCloneStart = nextIndex + 1
 		// Bump Length to capacity so plain Get() reads inside the final-layout
 		// DFS hit the cloned high-index slots. This is safe because (a) the
 		// cloned region is the only thing using those slots and (b) BeginLayout

@@ -140,6 +140,17 @@ type Context struct {
 	// what keeps subtree snapshots allocation-free in steady state.
 	snapshotIndexIdentity []int32
 
+	// prevLayoutElementsLow / prevLayoutElementsCloneStart record which
+	// layoutElements slots the previous frame dirtied, so resetEphemeralMemory
+	// clears only those. The live tree occupies [0, prevLayoutElementsLow); an
+	// exit-clone frame additionally fills [prevLayoutElementsCloneStart,
+	// capacity) and bumps Length to capacity. The untouched middle stays zero,
+	// so clearing just the two ends avoids a full-capacity memset (~3.8 MB at
+	// the default cap) on every frame of an exit animation.
+	// prevLayoutElementsCloneStart == capacity means no clone region.
+	prevLayoutElementsLow        int32
+	prevLayoutElementsCloneStart int32
+
 	// Boolean warnings: each is "fire the error once per Context lifetime".
 	// Mirrors Clay_BooleanWarnings in the C reference (subset).
 	warnHashMapCapacityExceeded       bool
@@ -297,6 +308,11 @@ func (c *Context) allocateEphemeralMemory() {
 	c.textElements = NewArray[int32](maxElements, a)
 	c.openClipElementStack = NewArray[int32](maxElements, a)
 	c.layoutElementClipElementIds = NewArray[int32](maxElements, a)
+
+	// Freshly-allocated arrays are already zero, so the first reset has nothing
+	// to clear: no live low-end and an empty clone region.
+	c.prevLayoutElementsLow = 0
+	c.prevLayoutElementsCloneStart = c.layoutElements.Capacity
 }
 
 // resetEphemeralMemory rewinds the per-frame arrays at the start of each
@@ -306,18 +322,26 @@ func (c *Context) allocateEphemeralMemory() {
 // high-index exit-clone slots are written before being read too.
 //
 // Pointer-bearing arrays (layoutElements, renderCommands, wrappedTextLines)
-// are additionally cleared over their previously-live range so stale entries
+// are additionally cleared over their previously-dirtied range so stale entries
 // don't keep last frame's strings, image/UserData (`any`), handler funcs, etc.
 // reachable until they happen to be overwritten. The other ephemeral arrays
-// hold only int32 indices, so a plain Length reset is sufficient. The clear is
-// O(previous live length) and allocation-free; layoutElements' previous length
-// can be its full capacity in a frame that emitted exit-transition clones.
+// hold only int32 indices, so a plain Length reset is sufficient.
 //
-// layoutElementClipElementIds is special: it is read by element slot
-// (GetCheckCapacity) before its own slot is written, so it is grown to capacity
-// and zeroed every frame.
+// renderCommands and wrappedTextLines are only ever filled contiguously from
+// index 0, so clearing [0, Length) covers them. layoutElements is special: an
+// exit-clone frame fills both a live low-end and a clone high-end and bumps
+// Length to capacity, so we clear those two recorded ranges and skip the
+// untouched middle (see prevLayoutElementsLow / prevLayoutElementsCloneStart) —
+// otherwise every exit-animation frame would memset the whole array.
+//
+// layoutElementClipElementIds is special the other way: it is read by element
+// slot (GetCheckCapacity) before its own slot is written, so it is grown to
+// capacity and zeroed every frame.
 func (c *Context) resetEphemeralMemory() {
-	clear(c.layoutElements.Data[:c.layoutElements.Length])
+	clear(c.layoutElements.Data[:c.prevLayoutElementsLow])
+	if c.prevLayoutElementsCloneStart < c.layoutElements.Capacity {
+		clear(c.layoutElements.Data[c.prevLayoutElementsCloneStart:c.layoutElements.Capacity])
+	}
 	clear(c.renderCommands.Data[:c.renderCommands.Length])
 	clear(c.wrappedTextLines.Data[:c.wrappedTextLines.Length])
 
@@ -436,6 +460,14 @@ func (c *Context) EndLayout(deltaTime float32) RenderCommandArray {
 		c.renderDebugView()
 		c.warningsEnabled = true
 	}
+
+	// Record the dirtied layoutElements range for next frame's reset clear. The
+	// live tree is [0, Length) now; cloneElementsWithExitTransition narrows the
+	// clone-start below if it emits an exit-clone high-end. Length is final here
+	// — neither the clone (writes the high end only) nor calculateFinalLayout
+	// adds low-end elements.
+	c.prevLayoutElementsLow = c.layoutElements.Length
+	c.prevLayoutElementsCloneStart = c.layoutElements.Capacity
 
 	// Transition handling. Order mirrors Clay_EndLayout (oracle/clay.h
 	// ~line 4459-4737): prune dead → mark/clone exits → first layout pass
