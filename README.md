@@ -19,6 +19,18 @@ canvas; claygo never touches a GPU itself).
   from the original `clay.h` and its output is compared against claygo's in the
   test suite.
 
+## Which Go port of Clay should I use?
+
+There are two. Pick by what you want:
+
+- **claygo (this one)** is hand-written Go. It reads like normal Go, has no
+  dependencies and no `unsafe` in its API, and is easy to debug and extend. It
+  does layout only — you bring your own renderer.
+- **[TotallyGamerJet/clay](https://github.com/TotallyGamerJet/clay)** is
+  generated automatically from Clay's C source. It stays in lockstep with
+  upstream for free and ships ready-made renderers (SDL, Ebitengine, software),
+  so its internals are generated C rather than idiomatic Go.
+
 ## Install
 
 ```sh
