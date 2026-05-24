@@ -8,8 +8,8 @@ import (
 // goldenTransitionScenes maps scene name -> a MULTI-frame Go layout builder that
 // drives its own BeginLayout/EndLayout cycles and returns the final frame's
 // render commands. Unlike goldenScenes (single frame, EndLayout(0)), exit
-// transitions only manifest across two frames, so these scenes can't use the
-// single-frame runScene helper.
+// transitions only manifest across multiple frames, so these scenes can't use
+// the single-frame runScene helper.
 //
 // Each name must match a scene compiled into oracle/main.c and a corresponding
 // testdata/<name>.golden.json must exist. TestSceneParity cross-checks the
@@ -17,11 +17,11 @@ import (
 var goldenTransitionScenes = map[string]func(*Context) RenderCommandArray{
 	"exit_nested_child_with_exit": sceneExitNestedChildWithExit,
 	"exit_nested_child_plain":     sceneExitNestedChildPlain,
+	"exit_single_mid":             sceneExitSingleMid,
+	"exit_single_completed":       sceneExitSingleCompleted,
 }
 
-// oracleTransitionDelta matches ORACLE_TRANSITION_DELTA in oracle/main.c. On
-// the dumped (first exit) frame elapsedTime is still 0, so the actual value
-// doesn't affect output — it's kept identical for clarity.
+// oracleTransitionDelta matches ORACLE_TRANSITION_DELTA in oracle/main.c.
 const oracleTransitionDelta = float32(0.1)
 
 // goldenExitSlideOff is the byte-identical port of oracle/main.c::exit_slide_off.
@@ -31,12 +31,48 @@ func goldenExitSlideOff(initial TransitionData, _ TransitionProperty) Transition
 }
 
 func goldenTransitionConfig() TransitionElementConfig {
+	return goldenTransitionConfigWithDuration(1.0)
+}
+
+func goldenTransitionConfigWithDuration(duration float32) TransitionElementConfig {
 	return TransitionElementConfig{
 		Handler:    linearXInterpolator,
-		Duration:   1.0,
+		Duration:   duration,
 		Properties: TransitionPropertyX,
 		Exit:       TransitionExitConfig{SetFinalState: goldenExitSlideOff},
 	}
+}
+
+func sceneExitSingle(c *Context, duration float32, exitFrames int) RenderCommandArray {
+	transition := goldenTransitionConfigWithDuration(duration)
+	c.BeginLayout()
+	BoxID(c, "ExitSingle", Decl{
+		Layout:          LayoutConfig{Sizing: Sizing{Width: SizingFixed(100), Height: SizingFixed(100)}},
+		BackgroundColor: RGBA(80, 80, 80, 255),
+		Transition:      transition,
+	}, nil)
+	c.EndLayout(oracleTransitionDelta)
+
+	var cmds RenderCommandArray
+	for range exitFrames {
+		c.BeginLayout()
+		cmds = c.EndLayout(oracleTransitionDelta)
+	}
+	return cmds
+}
+
+// sceneExitSingleMid returns the second exit frame. Frame 2 starts EXITING with
+// elapsedTime=0 and still renders at x=0; frame 3 uses elapsedTime=0.1s over a
+// 1s duration, so the oracle and Go port must both render at x=-50.
+func sceneExitSingleMid(c *Context) RenderCommandArray {
+	return sceneExitSingle(c, 1.0, 2)
+}
+
+// sceneExitSingleCompleted returns the frame where the exit handler reports
+// complete. The clone still exists in the first pass, but the second visible
+// pass must skip it after the transition record is removed.
+func sceneExitSingleCompleted(c *Context) RenderCommandArray {
+	return sceneExitSingle(c, oracleTransitionDelta, 2)
 }
 
 // sceneExitNestedChildWithExit mirrors oracle scene_exit_nested_child_with_exit:
@@ -101,8 +137,8 @@ func runTransitionScene(t *testing.T, frames func(*Context) RenderCommandArray) 
 	return frames(ctx)
 }
 
-// TestTransitionGoldens asserts the Go port reproduces the C oracle's frame-2
-// render commands for each multi-frame exit-transition scene, byte-for-byte.
+// TestTransitionGoldens asserts the Go port reproduces the C oracle's selected
+// output frame for each multi-frame exit-transition scene, byte-for-byte.
 func TestTransitionGoldens(t *testing.T) {
 	for name, frames := range goldenTransitionScenes {
 		t.Run(name, func(t *testing.T) {

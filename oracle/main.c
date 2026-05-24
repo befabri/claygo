@@ -869,10 +869,10 @@ static Clay_RenderCommandArray scene_grow_7_nonint(void) {
 // ---------------------------------------------------------------------------
 // Multi-frame exit-transition scenes
 // ---------------------------------------------------------------------------
-// These scenes run two frames against the same context (the harness only
-// initializes once per scene). Frame 1 declares the tree; frame 2 declares
-// nothing so the parent exit-transitions out. We dump frame 2, the first
-// exit frame, which renders at the original positions (elapsedTime == 0).
+// These scenes run multiple frames against the same context (the harness only
+// initializes once per scene). Frame 1 declares the tree; later frames omit it
+// so exit transitions can be captured at first-frame, mid-exit, and completion
+// points.
 //
 // They pin upstream's nested-exit behavior: when an exiting parent's subtree
 // is cloned, a nested child that ALSO has its own exit transition has its
@@ -880,6 +880,47 @@ static Clay_RenderCommandArray scene_grow_7_nonint(void) {
 // (clay.h:2933-2937), whereas a plain child is cloned and rendered.
 
 #define ORACLE_TRANSITION_DELTA 0.1f
+
+static void declare_exit_single(float duration) {
+    Clay_TransitionElementConfig transition = {
+        .handler = linear_x_interpolator,
+        .duration = duration,
+        .properties = CLAY_TRANSITION_PROPERTY_X,
+        .exit = { .setFinalState = exit_slide_off },
+    };
+    Clay_BeginLayout();
+    CLAY(CLAY_ID("ExitSingle"), {
+        .layout = { .sizing = { CLAY_SIZING_FIXED(100), CLAY_SIZING_FIXED(100) } },
+        .backgroundColor = { 80, 80, 80, 255 },
+        .transition = transition,
+    });
+}
+
+// Frame 3 should render the exiting rectangle at x=-50: frame 2 starts EXITING
+// with elapsedTime=0, then frame 3 applies elapsedTime=0.1 over duration=1.0.
+static Clay_RenderCommandArray scene_exit_single_mid(void) {
+    declare_exit_single(1.0f);
+    Clay_EndLayout(ORACLE_TRANSITION_DELTA);
+
+    Clay_BeginLayout();
+    Clay_EndLayout(ORACLE_TRANSITION_DELTA);
+
+    Clay_BeginLayout();
+    return Clay_EndLayout(ORACLE_TRANSITION_DELTA);
+}
+
+// Duration equals the per-frame delta. Frame 3 completes the exit between the
+// two transition layout passes, so the visible pass should emit no rectangle.
+static Clay_RenderCommandArray scene_exit_single_completed(void) {
+    declare_exit_single(ORACLE_TRANSITION_DELTA);
+    Clay_EndLayout(ORACLE_TRANSITION_DELTA);
+
+    Clay_BeginLayout();
+    Clay_EndLayout(ORACLE_TRANSITION_DELTA);
+
+    Clay_BeginLayout();
+    return Clay_EndLayout(ORACLE_TRANSITION_DELTA);
+}
 
 // Parent + child where BOTH configure an exit transition. Frame 2 should emit
 // ONLY the parent rectangle — the nested child is removed and skipped.
@@ -977,6 +1018,8 @@ static Scene SCENES[] = {
     { "grow_7_nonint",              scene_grow_7_nonint              },
     { "exit_nested_child_with_exit",scene_exit_nested_child_with_exit},
     { "exit_nested_child_plain",    scene_exit_nested_child_plain    },
+    { "exit_single_mid",            scene_exit_single_mid            },
+    { "exit_single_completed",      scene_exit_single_completed      },
 };
 static const int SCENE_COUNT = (int)(sizeof(SCENES) / sizeof(SCENES[0]));
 
