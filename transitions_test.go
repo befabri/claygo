@@ -365,3 +365,28 @@ func TestTransitionsScenesWithoutHandlerUnchanged(t *testing.T) {
 		t.Errorf("transitionDatas.Length after non-transition scene = %d, want 0", got)
 	}
 }
+
+func TestTransitionsNonExitingFrameDoesNotInflateArenaArrays(t *testing.T) {
+	ctx := freshContext(t)
+	ctx.BeginLayout()
+	BoxID(ctx, "StableTransition", Decl{
+		Layout:          LayoutConfig{Sizing: Sizing{Width: SizingFixed(100), Height: SizingFixed(100)}},
+		BackgroundColor: RGBA(80, 80, 80, 255),
+		Transition: TransitionElementConfig{
+			Handler:    linearXInterpolator,
+			Duration:   1,
+			Properties: TransitionPropertyX,
+		},
+	}, nil)
+	ctx.EndLayout(0.016)
+
+	if got := ctx.transitionDatas.Length; got != 1 {
+		t.Fatalf("transitionDatas.Length = %d, want 1", got)
+	}
+	if ctx.layoutElements.Length == ctx.layoutElements.Capacity {
+		t.Fatalf("layoutElements.Length was inflated to capacity without an exit clone")
+	}
+	if ctx.layoutElementChildren.Length == ctx.layoutElementChildren.Capacity {
+		t.Fatalf("layoutElementChildren.Length was inflated to capacity without an exit clone")
+	}
+}

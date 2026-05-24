@@ -4469,6 +4469,9 @@ Clay_RenderCommandArray Clay_EndLayout(float deltaTime) {
         }
     }
 
+    Clay__int32_tArray elementIdsToRemoveTransitions = context->reusableElementIndexBuffer;
+    elementIdsToRemoveTransitions.length = 0;
+
     for (int i = 0; i < context->transitionDatas.length; ++i) {
         Clay__TransitionDataInternal *data = Clay__TransitionDataInternalArray_Get(&context->transitionDatas, i);
         Clay_LayoutElementHashMapItem *hashMapItem = Clay__GetHashMapItem(data->elementId);
@@ -4512,26 +4515,39 @@ Clay_RenderCommandArray Clay_EndLayout(float deltaTime) {
                     int32_t bufferIndex = 0;
                     while (bufferIndex < bfsBuffer.length) {
                         Clay_LayoutElement *layoutElement = Clay_LayoutElementArray_GetCheckCapacity(&context->layoutElements, Clay__int32_tArray_GetValue(&bfsBuffer, bufferIndex));
-                        Clay_LayoutElementHashMapItem* dfsMapItem = Clay__GetHashMapItem(layoutElement->id);
-                        // Children of exiting elements may have been moved elsewhere in the layout, this will throw a duplicate ID error if they still exist.
-                        if (dfsMapItem->generation <= context->generation) {
+                        Clay_LayoutElementHashMapItem* bfsMapItem = Clay__GetHashMapItem(layoutElement->id);
+                        // Children of exiting elements may have been moved elsewhere in the layout, this prevents a duplicate ID error if they still exist.
+                        if (bfsMapItem->generation <= context->generation) {
                             Clay__AddHashMapItem(CLAY__INIT(Clay_ElementId){ layoutElement->id }, layoutElement);
+                            int32_t firstChildSlot = context->layoutElementChildren.length;
+                            uint16_t newChildrenLength = layoutElement->children.length;
+                            for (int j = 0; j < layoutElement->children.length; ++j) {
+                                Clay_LayoutElement* childElement = Clay_LayoutElementArray_GetCheckCapacity(&context->layoutElements, layoutElement->children.elements[j]);
+                                Clay_LayoutElementHashMapItem* childMapItem = Clay__GetHashMapItem(childElement->id);
+                                if (childMapItem->generation <= context->generation) {
+                                    // Remove any nested transitions inside exiting trees
+                                    if (!childElement->isTextElement && childElement->config.transition.handler) {
+                                        Clay__int32_tArray_Add(&elementIdsToRemoveTransitions, childElement->id);
+                                    }
+                                    int32_t childElementIndex = childElement - context->layoutElements.internalArray;
+                                    Clay_LayoutElement* newChildElement = Clay_LayoutElementArray_Add(&context->layoutElements, *childElement);
+                                    Clay__StringArray_Add(&context->layoutElementIdStrings, *Clay__StringArray_GetCheckCapacity(&context->layoutElementIdStrings, childElementIndex));
+                                    Clay__int32_tArray_Add(&context->layoutElementClipElementIds, *Clay__int32_tArray_GetCheckCapacity(&context->layoutElementClipElementIds, childElementIndex));
+                                    Clay__int32_tArray_Add(&bfsBuffer, context->layoutElements.length - 1);
+                                    if (newChildElement->isTextElement) {
+                                        newChildElement->textElementData.wrappedLines.length = 0;
+                                    }
+                                    Clay__int32_tArray_Add(&context->layoutElementChildren, context->layoutElements.length - 1);
+                                } else {
+                                    newChildrenLength--;
+                                }
+                            }
+                            layoutElement->children = CLAY__INIT(Clay__LayoutElementChildren) {
+                                .elements = &context->layoutElementChildren.internalArray[firstChildSlot],
+                                .length = newChildrenLength,
+                            };
                         }
                         bufferIndex++;
-                        int32_t firstChildSlot = context->layoutElementChildren.length;
-                        for (int j = 0; j < layoutElement->children.length; ++j) {
-                            Clay_LayoutElement* childElement = Clay_LayoutElementArray_GetCheckCapacity(&context->layoutElements, layoutElement->children.elements[j]);
-                            int32_t childElementIndex = childElement - context->layoutElements.internalArray;
-                            Clay_LayoutElement* newChildElement = Clay_LayoutElementArray_Add(&context->layoutElements, *childElement);
-                            Clay__StringArray_Add(&context->layoutElementIdStrings, *Clay__StringArray_GetCheckCapacity(&context->layoutElementIdStrings, childElementIndex));
-                            Clay__int32_tArray_Add(&context->layoutElementClipElementIds, *Clay__int32_tArray_GetCheckCapacity(&context->layoutElementClipElementIds, childElementIndex));
-                            Clay__int32_tArray_Add(&bfsBuffer, context->layoutElements.length - 1);
-                            if (newChildElement->isTextElement) {
-                                newChildElement->textElementData.wrappedLines.length = 0;
-                            }
-                            Clay__int32_tArray_Add(&context->layoutElementChildren, context->layoutElements.length - 1);
-                        }
-                        layoutElement->children.elements = &context->layoutElementChildren.internalArray[firstChildSlot];
                     }
                     hashMapItem->layoutElement = data->elementThisFrame;
 
@@ -4572,6 +4588,15 @@ Clay_RenderCommandArray Clay_EndLayout(float deltaTime) {
                     i--;
                     continue;
                 }
+            }
+        }
+    }
+
+    for (int i = 0; i < elementIdsToRemoveTransitions.length; ++i) {
+        for (int j = 0; j < context->transitionDatas.length; ++j) {
+            if (Clay__TransitionDataInternalArray_Get(&context->transitionDatas, j)->elementId == Clay__int32_tArray_GetValue(&elementIdsToRemoveTransitions, i)) {
+                Clay__TransitionDataInternalArray_RemoveSwapback(&context->transitionDatas, j);
+                break;
             }
         }
     }

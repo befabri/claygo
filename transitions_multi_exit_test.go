@@ -5,16 +5,17 @@ import (
 )
 
 // transitions_multi_exit_test.go exercises cloneElementsWithExitTransition:
-// when a parent element with exit-transitioned children disappears, the
-// entire subtree must still appear in the next frame's render commands
-// (driving each element's exit handler one more time before they vanish).
+// when an exit-transitioned parent disappears, its previous-frame subtree is
+// cloned back for exit rendering. Nested elements that also own transition
+// records follow upstream C: their records are removed when the ancestor exit
+// owns the subtree.
 //
 // The single-element exit path is covered by
 // TestTransitionsExitTriggersWhenElementRemoved in transitions_test.go.
 
 // TestTransitionsMultiElementSubtreeExit declares a parent with one child in
-// frame 1 (both registered for exit transitions), then in frame 2 declares
-// neither. The clone pass must surface both as render commands.
+// frame 1, then in frame 2 declares neither. The clone pass must surface the
+// child even though only the parent owns a transition record.
 func TestTransitionsMultiElementSubtreeExit(t *testing.T) {
 	ctx := freshContext(t)
 
@@ -45,25 +46,17 @@ func TestTransitionsMultiElementSubtreeExit(t *testing.T) {
 			BoxID(ctx, "ExitingChild", Decl{
 				Layout:          LayoutConfig{Sizing: Sizing{Width: SizingFixed(100), Height: SizingFixed(50)}},
 				BackgroundColor: RGBA(200, 50, 50, 255),
-				Transition: TransitionElementConfig{
-					Handler:    linearXInterpolator,
-					Duration:   1.0,
-					Properties: TransitionPropertyX,
-					Exit: TransitionExitConfig{
-						SetFinalState: exitSlideOff,
-					},
-				},
 			}, nil)
 		})
 	}
 
-	// Frame 1: both elements present. Two transitionData entries register.
+	// Frame 1: both elements present. Only the parent registers a transition.
 	ctx.BeginLayout()
 	declareSubtree()
 	ctx.EndLayout(0.1)
 
-	if got := ctx.transitionDatas.Length; got != 2 {
-		t.Fatalf("after frame 1 transitionDatas.Length = %d, want 2", got)
+	if got := ctx.transitionDatas.Length; got != 1 {
+		t.Fatalf("after frame 1 transitionDatas.Length = %d, want 1", got)
 	}
 
 	parentID := HashString(String{Text: "ExitingParent"}, 0).ID
@@ -78,23 +71,21 @@ func TestTransitionsMultiElementSubtreeExit(t *testing.T) {
 		t.Fatalf("frame 1: child rectangle missing from render commands")
 	}
 
-	// Frame 2: neither element declared. Both must enter EXITING state and
-	// the clone pass must place both back into render commands.
+	// Frame 2: neither element declared. The parent must enter EXITING and
+	// the clone pass must place both parent and child back into render commands.
 	ctx.BeginLayout()
 	// (no declareSubtree)
 	ctx.EndLayout(0.1)
 
-	if got := ctx.transitionDatas.Length; got != 2 {
-		t.Fatalf("after frame 2 transitionDatas.Length = %d, want 2 (both still exiting)", got)
+	if got := ctx.transitionDatas.Length; got != 1 {
+		t.Fatalf("after frame 2 transitionDatas.Length = %d, want 1 (parent still exiting)", got)
 	}
-	for i := int32(0); i < ctx.transitionDatas.Length; i++ {
-		td := ctx.transitionDatas.Get(i)
-		if td.State != TransitionStateExiting {
-			t.Errorf("frame 2 transitionData[%d].State = %d, want EXITING", i, td.State)
-		}
-		if !td.TransitionOut {
-			t.Errorf("frame 2 transitionData[%d].TransitionOut = false, want true", i)
-		}
+	td := ctx.transitionDatas.Get(0)
+	if td.State != TransitionStateExiting {
+		t.Errorf("frame 2 transition.State = %d, want EXITING", td.State)
+	}
+	if !td.TransitionOut {
+		t.Errorf("frame 2 transition.TransitionOut = false, want true")
 	}
 
 	cmdsF2 := ctx.renderCommands.Data[:ctx.renderCommands.Length]
@@ -114,6 +105,108 @@ func TestTransitionsMultiElementSubtreeExit(t *testing.T) {
 	}
 	if childCmd != nil && (childCmd.BoundingBox.Width <= 0 || childCmd.BoundingBox.Height <= 0) {
 		t.Errorf("frame 2: child clone has degenerate size %v", childCmd.BoundingBox)
+	}
+}
+
+func TestTransitionsNestedExitTransitionRemovedWithParent(t *testing.T) {
+	ctx := freshContext(t)
+	exitSlideOff := func(initial TransitionData, _ TransitionProperty) TransitionData {
+		initial.BoundingBox.X = -500
+		return initial
+	}
+	transition := TransitionElementConfig{
+		Handler:    linearXInterpolator,
+		Duration:   1.0,
+		Properties: TransitionPropertyX,
+		Exit:       TransitionExitConfig{SetFinalState: exitSlideOff},
+	}
+	declare := func() {
+		BoxID(ctx, "NestedParent", Decl{
+			Layout:          LayoutConfig{Sizing: Sizing{Width: SizingFixed(120), Height: SizingFixed(120)}, LayoutDirection: TopToBottom},
+			BackgroundColor: RGBA(100, 100, 200, 255),
+			Transition:      transition,
+		}, func() {
+			BoxID(ctx, "NestedChild", Decl{
+				Layout:          LayoutConfig{Sizing: Sizing{Width: SizingFixed(80), Height: SizingFixed(40)}},
+				BackgroundColor: RGBA(200, 50, 50, 255),
+				Transition:      transition,
+			}, nil)
+		})
+	}
+
+	ctx.BeginLayout()
+	declare()
+	ctx.EndLayout(0.1)
+	if got := ctx.transitionDatas.Length; got != 2 {
+		t.Fatalf("after frame 1 transitionDatas.Length = %d, want 2", got)
+	}
+
+	ctx.BeginLayout()
+	ctx.EndLayout(0.1)
+	if got := ctx.transitionDatas.Length; got != 1 {
+		t.Fatalf("after frame 2 transitionDatas.Length = %d, want 1 (nested transition removed)", got)
+	}
+
+	parentID := HashString(String{Text: "NestedParent"}, 0).ID
+	childID := HashString(String{Text: "NestedChild"}, 0).ID
+	cmds := ctx.renderCommands.Data[:ctx.renderCommands.Length]
+	if findRectCommand(cmds, parentID) == nil {
+		t.Errorf("frame 2: parent rectangle missing from render commands")
+	}
+	if findRectCommand(cmds, childID) != nil {
+		t.Errorf("frame 2: nested child transition rendered after its record was removed")
+	}
+}
+
+func TestTransitionsNestedExitChildCheckedFirstDoesNotBecomeRoot(t *testing.T) {
+	ctx := freshContext(t)
+	exitSlideOff := func(initial TransitionData, _ TransitionProperty) TransitionData {
+		initial.BoundingBox.X = -500
+		return initial
+	}
+	transition := TransitionElementConfig{
+		Handler:    linearXInterpolator,
+		Duration:   1.0,
+		Properties: TransitionPropertyX,
+		Exit:       TransitionExitConfig{SetFinalState: exitSlideOff},
+	}
+	parentID := HashString(String{Text: "OrderedParent"}, 0).ID
+	childID := HashString(String{Text: "OrderedChild"}, 0).ID
+
+	ctx.BeginLayout()
+	BoxID(ctx, "OrderedParent", Decl{
+		Layout:          LayoutConfig{Sizing: Sizing{Width: SizingFixed(120), Height: SizingFixed(120)}, LayoutDirection: TopToBottom},
+		BackgroundColor: RGBA(100, 100, 200, 255),
+		Transition:      transition,
+	}, func() {
+		BoxID(ctx, "OrderedChild", Decl{
+			Layout:          LayoutConfig{Sizing: Sizing{Width: SizingFixed(80), Height: SizingFixed(40)}},
+			BackgroundColor: RGBA(200, 50, 50, 255),
+			Transition:      transition,
+		}, nil)
+	})
+	ctx.EndLayout(0.1)
+	if got := ctx.transitionDatas.Length; got != 2 {
+		t.Fatalf("after frame 1 transitionDatas.Length = %d, want 2", got)
+	}
+
+	if ctx.transitionDatas.Data[0].ElementID != childID {
+		if ctx.transitionDatas.Data[1].ElementID != childID {
+			t.Fatalf("child transition not found")
+		}
+		ctx.transitionDatas.Data[0], ctx.transitionDatas.Data[1] = ctx.transitionDatas.Data[1], ctx.transitionDatas.Data[0]
+	}
+
+	ctx.BeginLayout()
+	ctx.EndLayout(0.1)
+	if got := ctx.transitionDatas.Length; got != 1 {
+		t.Fatalf("after frame 2 transitionDatas.Length = %d, want 1", got)
+	}
+	if got := ctx.transitionDatas.Get(0).ElementID; got != parentID {
+		t.Fatalf("remaining transition id = %d, want parent id %d", got, parentID)
+	}
+	if got := ctx.layoutElementTreeRoots.Length; got != 1 {
+		t.Fatalf("layoutElementTreeRoots.Length = %d, want 1 (auto-root only; parent is reattached)", got)
 	}
 }
 

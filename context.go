@@ -390,14 +390,18 @@ func (c *Context) EndLayout(deltaTime float32) RenderCommandArray {
 	}
 
 	// Transition handling. Order mirrors Clay_EndLayout (oracle/clay.h
-	// ~line 4459-4737): prune dead → mark-exit → first layout pass (records
-	// true bboxes on hashmap items) → advance state machine → second layout
-	// pass with useStoredBoundingBoxes so emitTreeRoot applies the
-	// interpolated overrides on the way out. The first-pass render command
-	// list is discarded; the visible commands come from the second pass.
+	// ~line 4459-4737): prune dead → mark/clone exits → first layout pass
+	// (records true bboxes on hashmap items) → advance state machine → second
+	// layout pass with useStoredBoundingBoxes so emitTreeRoot applies the
+	// interpolated overrides on the way out. The first-pass render command list
+	// is discarded; the visible commands come from the second pass.
 	if c.transitionDatas.Length > 0 {
 		c.pruneDeadTransitions()
 		c.markExitingElements()
+		// Clone any EXITING subtrees back into the layout arena and register them
+		// before the first layout pass, matching upstream C. The advance loop then
+		// mutates those clones directly before the second pass renders them.
+		c.cloneElementsWithExitTransition()
 		// First pass: lay out + emit using LAST frame's transition state on
 		// the hashmap bbox (the override fires below). This pass writes
 		// fresh bboxes onto the hashmap so the advance loop sees the new
@@ -406,14 +410,6 @@ func (c *Context) EndLayout(deltaTime float32) RenderCommandArray {
 		c.calculateFinalLayout(deltaTime)
 		// Advance the state machine using the freshly-recorded targets.
 		c.advanceTransitions(deltaTime)
-		// Clone any EXITING subtrees back into the layout arena (high-end
-		// slots) and register them as additional tree roots so the second
-		// pass renders one more frame of their exit animation. Must run
-		// AFTER advance (which mutates ElementThisFrame state we want
-		// captured in the clone) and BEFORE pass 2 (which iterates tree
-		// roots to emit render commands). See cloneElementsWithExitTransition
-		// for the deviation notes versus upstream.
-		c.cloneElementsWithExitTransition()
 		// Second pass: re-emit with the now-current transition state
 		// overriding the bbox of each transitioning element.
 		c.useStoredBoundingBoxes = true
