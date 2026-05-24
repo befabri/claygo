@@ -1,6 +1,10 @@
 zlib/libpng license
 
-Copyright (c) 2024 Nic Barker
+Copyright (c) 2024 Nic Barker (original Clay library, https://github.com/nicbarker/clay)
+Copyright (c) 2026 Benjamin Fabri (claygo — Go port)
+
+claygo is a derivative work: a pure-Go port of Clay. It is distributed under
+the same zlib/libpng license as the original, reproduced below.
 
 This software is provided 'as-is', without any express or implied warranty.
 In no event will the authors be held liable for any damages arising from the
