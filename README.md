@@ -271,6 +271,11 @@ claygo's layout output against it for parity. See the
 [Clay documentation](https://github.com/nicbarker/clay) for conceptual
 background — most of it applies directly.
 
+The exact upstream commit is pinned in `oracle/CLAY_VERSION`. When Clay
+changes, `make -C oracle update-clay REF=<tag>` re-vendors the header and
+regenerates the golden corpus; `oracle/UPSTREAM.md` documents the full
+bump workflow.
+
 Full Go API reference: run `go doc github.com/befabri/claygo` or browse it on
 pkg.go.dev once published.
 
