@@ -43,6 +43,34 @@ static void error_handler(Clay_ErrorData err) {
 }
 
 // ---------------------------------------------------------------------------
+// Deterministic transition handlers
+// ---------------------------------------------------------------------------
+// Byte-identical to the Go port's linearXInterpolator / exitSlideOff used in
+// transitions_test.go, so multi-frame transition scenes produce matching
+// golden output. On the first exit frame elapsedTime == 0, so the linear
+// interpolation collapses to the initial position (no float drift).
+
+static bool linear_x_interpolator(Clay_TransitionCallbackArguments args) {
+    if (args.duration <= 0) {
+        if (args.current && (args.properties & CLAY_TRANSITION_PROPERTY_X))
+            args.current->boundingBox.x = args.target.boundingBox.x;
+        return true;
+    }
+    float t = args.elapsedTime / args.duration;
+    if (t >= 1) t = 1;
+    if (args.current && (args.properties & CLAY_TRANSITION_PROPERTY_X))
+        args.current->boundingBox.x = args.initial.boundingBox.x +
+            (args.target.boundingBox.x - args.initial.boundingBox.x) * t;
+    return t >= 1;
+}
+
+static Clay_TransitionData exit_slide_off(Clay_TransitionData initialState, Clay_TransitionProperty properties) {
+    (void)properties;
+    initialState.boundingBox.x = -500;
+    return initialState;
+}
+
+// ---------------------------------------------------------------------------
 // JSON dumping
 // ---------------------------------------------------------------------------
 // The schema is intentionally minimal and stable. The Go port produces the
@@ -839,6 +867,74 @@ static Clay_RenderCommandArray scene_grow_7_nonint(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Multi-frame exit-transition scenes
+// ---------------------------------------------------------------------------
+// These scenes run two frames against the same context (the harness only
+// initializes once per scene). Frame 1 declares the tree; frame 2 declares
+// nothing so the parent exit-transitions out. We dump frame 2, the first
+// exit frame, which renders at the original positions (elapsedTime == 0).
+//
+// They pin upstream's nested-exit behavior: when an exiting parent's subtree
+// is cloned, a nested child that ALSO has its own exit transition has its
+// transition record removed and is then skipped by the render pass
+// (clay.h:2933-2937), whereas a plain child is cloned and rendered.
+
+#define ORACLE_TRANSITION_DELTA 0.1f
+
+// Parent + child where BOTH configure an exit transition. Frame 2 should emit
+// ONLY the parent rectangle — the nested child is removed and skipped.
+static Clay_RenderCommandArray scene_exit_nested_child_with_exit(void) {
+    Clay_TransitionElementConfig transition = {
+        .handler = linear_x_interpolator,
+        .duration = 1.0f,
+        .properties = CLAY_TRANSITION_PROPERTY_X,
+        .exit = { .setFinalState = exit_slide_off },
+    };
+    Clay_BeginLayout();
+    CLAY(CLAY_ID("NEParent"), {
+        .layout = { .sizing = { CLAY_SIZING_FIXED(120), CLAY_SIZING_FIXED(120) }, .layoutDirection = CLAY_TOP_TO_BOTTOM },
+        .backgroundColor = { 100, 100, 200, 255 },
+        .transition = transition,
+    }) {
+        CLAY(CLAY_ID("NEChild"), {
+            .layout = { .sizing = { CLAY_SIZING_FIXED(80), CLAY_SIZING_FIXED(40) } },
+            .backgroundColor = { 200, 50, 50, 255 },
+            .transition = transition,
+        });
+    }
+    Clay_EndLayout(ORACLE_TRANSITION_DELTA);
+
+    Clay_BeginLayout();
+    return Clay_EndLayout(ORACLE_TRANSITION_DELTA);
+}
+
+// Parent with an exit transition, child with NONE. Frame 2 should emit BOTH
+// the parent and the (cloned) child rectangle.
+static Clay_RenderCommandArray scene_exit_nested_child_plain(void) {
+    Clay_TransitionElementConfig transition = {
+        .handler = linear_x_interpolator,
+        .duration = 1.0f,
+        .properties = CLAY_TRANSITION_PROPERTY_X,
+        .exit = { .setFinalState = exit_slide_off },
+    };
+    Clay_BeginLayout();
+    CLAY(CLAY_ID("NPParent"), {
+        .layout = { .sizing = { CLAY_SIZING_FIXED(120), CLAY_SIZING_FIXED(120) }, .layoutDirection = CLAY_TOP_TO_BOTTOM },
+        .backgroundColor = { 100, 100, 200, 255 },
+        .transition = transition,
+    }) {
+        CLAY(CLAY_ID("NPChild"), {
+            .layout = { .sizing = { CLAY_SIZING_FIXED(80), CLAY_SIZING_FIXED(40) } },
+            .backgroundColor = { 200, 50, 50, 255 },
+        });
+    }
+    Clay_EndLayout(ORACLE_TRANSITION_DELTA);
+
+    Clay_BeginLayout();
+    return Clay_EndLayout(ORACLE_TRANSITION_DELTA);
+}
+
+// ---------------------------------------------------------------------------
 // Scene dispatch
 // ---------------------------------------------------------------------------
 
@@ -879,6 +975,8 @@ static Scene SCENES[] = {
     { "floating_z_sort",            scene_floating_z_sort            },
     { "floating_in_clip",           scene_floating_in_clip           },
     { "grow_7_nonint",              scene_grow_7_nonint              },
+    { "exit_nested_child_with_exit",scene_exit_nested_child_with_exit},
+    { "exit_nested_child_plain",    scene_exit_nested_child_plain    },
 };
 static const int SCENE_COUNT = (int)(sizeof(SCENES) / sizeof(SCENES[0]));
 

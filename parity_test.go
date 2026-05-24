@@ -13,8 +13,8 @@ import (
 //
 //  1. The committed testdata/*.golden.json files (the C oracle's regression
 //     net).
-//  2. The Go-side goldenScenes map in scenes_test.go (the builders the port
-//     must match).
+//  2. The Go-side scene builders: goldenScenes (single-frame) in scenes_test.go
+//     plus goldenTransitionScenes (multi-frame) in scenes_transition_test.go.
 //  3. The oracle binary's --list output, if the binary has been built.
 //
 // Any mismatch means somebody added a scene on one side without the other.
@@ -22,7 +22,7 @@ import (
 // best-effort and is skipped if oracle/oracle has not been compiled.
 func TestSceneParity(t *testing.T) {
 	goldenNames := listGoldenFiles(t)
-	sceneNames := keys(goldenScenes)
+	sceneNames := append(keys(goldenScenes), transitionKeys(goldenTransitionScenes)...)
 	sort.Strings(goldenNames)
 	sort.Strings(sceneNames)
 
@@ -60,6 +60,14 @@ func listGoldenFiles(t *testing.T) []string {
 }
 
 func keys(m map[string]func(*Context)) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
+func transitionKeys(m map[string]func(*Context) RenderCommandArray) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)
