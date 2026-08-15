@@ -107,7 +107,7 @@ type LayoutElementHashMapItem struct {
 //
 // Returns the stored item, or nil if capacity was exceeded.
 func (c *Context) addHashMapItem(elementID ElementID, element *LayoutElement) *LayoutElementHashMapItem {
-	if c.layoutElementsHashMapInternal.Length == c.layoutElementsHashMapInternal.Capacity-1 {
+	if c.layoutElementsHashMapInternal.Length >= c.layoutElementsHashMapInternal.Capacity-1 {
 		if !c.warnHashMapCapacityExceeded {
 			c.reportError(ErrorTypeHashMapCapacityExceeded,
 				"Clay has run out of space in its internal element ID hashmap. Try using SetMaxElementCount() with a higher value.")
@@ -165,6 +165,9 @@ func (c *Context) addHashMapItem(elementID ElementID, element *LayoutElement) *L
 		indexToUse = c.layoutElementsHashMapInternal.Length
 	}
 	hashItem := c.layoutElementsHashMapInternal.Set(indexToUse, item)
+	if hashItem == nil {
+		return nil
+	}
 	if hashItemPrevious != -1 {
 		c.layoutElementsHashMapInternal.Get(hashItemPrevious).NextIndex = indexToUse
 	} else {

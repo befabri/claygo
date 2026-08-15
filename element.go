@@ -20,7 +20,7 @@ const maxFloat32 float32 = math.MaxFloat32
 // auto-generated id derived from (parent.id, parent.children + floating).
 // Mirrors Clay__OpenElement (oracle/clay.h ~line 2041).
 func (c *Context) openElement() {
-	if c.layoutElements.Length == c.layoutElements.Capacity-1 || c.warnMaxElementsExceeded {
+	if c.layoutElements.Length >= c.layoutElements.Capacity-1 || c.warnMaxElementsExceeded {
 		c.warnMaxElementsExceeded = true
 		return
 	}
@@ -50,7 +50,7 @@ func (c *Context) openElementWithID(id string) {
 }
 
 func (c *Context) openElementWithElementID(elementID ElementID) {
-	if c.layoutElements.Length == c.layoutElements.Capacity-1 || c.warnMaxElementsExceeded {
+	if c.layoutElements.Length >= c.layoutElements.Capacity-1 || c.warnMaxElementsExceeded {
 		c.warnMaxElementsExceeded = true
 		return
 	}
@@ -64,7 +64,7 @@ func (c *Context) openElementWithElementID(elementID ElementID) {
 // openElementWithIDOffset is openElementWithID seeded with a numeric offset
 // for loop iteration. Mirrors CLAY_IDI(id, offset) at oracle/clay.h ~line 88.
 func (c *Context) openElementWithIDOffset(id string, offset uint32) {
-	if c.layoutElements.Length == c.layoutElements.Capacity-1 || c.warnMaxElementsExceeded {
+	if c.layoutElements.Length >= c.layoutElements.Capacity-1 || c.warnMaxElementsExceeded {
 		c.warnMaxElementsExceeded = true
 		return
 	}
@@ -97,7 +97,7 @@ func (c *Context) recordClipAncestor(idx int32) {
 // the sizing solver knows how big the leaf wants to be before wrapping.
 // Mirrors Clay__OpenTextElement (oracle/clay.h ~line 2083).
 func (c *Context) openTextElement(text string, cfg TextElementConfig) {
-	if c.layoutElements.Length == c.layoutElements.Capacity-1 || c.warnMaxElementsExceeded {
+	if c.layoutElements.Length >= c.layoutElements.Capacity-1 || c.warnMaxElementsExceeded {
 		c.warnMaxElementsExceeded = true
 		return
 	}

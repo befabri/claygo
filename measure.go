@@ -165,7 +165,7 @@ func (c *Context) measureTextCached(text string, cfg *TextElementConfig) *Measur
 		c.measureTextHashMapInternal.Set(newItemIndex, newCacheItem)
 		measured = c.measureTextHashMapInternal.Get(newItemIndex)
 	} else {
-		if c.measureTextHashMapInternal.Length == c.measureTextHashMapInternal.Capacity-1 {
+		if c.measureTextHashMapInternal.Length >= c.measureTextHashMapInternal.Capacity-1 {
 			if !c.warnMaxTextMeasureCacheExceeded {
 				c.reportError(ErrorTypeElementsCapacityExceeded,
 					"Clay ran out of capacity while attempting to measure text elements. Try using SetMaxElementCount() with a higher value.")
@@ -189,7 +189,7 @@ func (c *Context) measureTextCached(text string, cfg *TextElementConfig) *Measur
 	previousWord := &tempWord
 	textLen := int32(len(text))
 	for end < textLen {
-		if c.measuredWords.Length == c.measuredWords.Capacity-1 {
+		if c.measuredWords.Length >= c.measuredWords.Capacity-1 {
 			if !c.warnMaxTextMeasureCacheExceeded {
 				c.reportError(ErrorTypeTextMeasurementCapacityExceeded,
 					"Clay has run out of space in its internal text measurement cache. Try using SetMaxMeasureTextCacheWordCount() (default 16384, with 1 unit storing 1 measured word).")
