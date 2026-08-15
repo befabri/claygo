@@ -21,7 +21,11 @@ type Array[T any] struct {
 // those pointers from the collector when the arena is reused.
 //
 // Returns a zero Array{} (with nil Data) if the arena cannot satisfy the
-// reservation, preserving Clay's soft-fail capacity behavior.
+// reservation, preserving Clay's soft-fail capacity behavior. The failure is
+// reported through the current Context's error handler as
+// ErrorTypeArenaCapacityExceeded (mirrors Clay__Array_Allocate_Arena,
+// oracle/clay.h ~line 3963), because a zero Array downstream is otherwise
+// indistinguishable from a healthy-but-full one.
 func NewArray[T any](capacity int32, arena *Arena) Array[T] {
 	if capacity < 0 {
 		return Array[T]{}
@@ -29,6 +33,10 @@ func NewArray[T any](capacity int32, arena *Arena) Array[T] {
 	if arena != nil {
 		typ := reflect.TypeFor[T]()
 		if arena.allocBytes(uintptr(capacity)*typ.Size(), uintptr(typ.Align())) == nil {
+			if currentContext != nil {
+				currentContext.reportError(ErrorTypeArenaCapacityExceeded,
+					"Clay attempted to allocate memory in its arena, but ran out of capacity. Try increasing the capacity of the arena passed to Clay_Initialize()")
+			}
 			return Array[T]{}
 		}
 	}

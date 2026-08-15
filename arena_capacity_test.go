@@ -5,6 +5,29 @@ import (
 	"time"
 )
 
+// TestUndersizedArenaReportsArenaCapacityExceeded pins the diagnosability of
+// an arena smaller than MinMemorySize(). NewArray soft-fails to a zero Array
+// in that case, and before this test every downstream symptom (empty layouts,
+// the frame-2 hang below) arrived with no error ever fired — the handler heard
+// nothing because ErrorTypeArenaCapacityExceeded existed but had no call site.
+// Mirrors Clay__Array_Allocate_Arena (oracle/clay.h ~line 3963), which reports
+// through the current context's handler on every failed reservation.
+func TestUndersizedArenaReportsArenaCapacityExceeded(t *testing.T) {
+	var got []ErrorData
+	mem := make([]byte, 64<<10) // far below MinMemorySize (~7.4 MB at defaults)
+	arena := CreateArenaWithCapacityAndMemory(uint(len(mem)), mem)
+	Initialize(arena, Dimensions{Width: 1280, Height: 720}, ErrorHandler{
+		Func: func(err ErrorData) { got = append(got, err) },
+	})
+
+	for _, e := range got {
+		if e.Type == ErrorTypeArenaCapacityExceeded {
+			return
+		}
+	}
+	t.Fatalf("Initialize with a 64 KB arena fired no ErrorTypeArenaCapacityExceeded; got %d errors: %+v", len(got), got)
+}
+
 // TestUndersizedArenaDoesNotHang reproduces the frame-2 infinite loop an
 // undersized arena used to cause. With layoutElementsHashMapInternal at zero
 // capacity, addHashMapItem's Set failed but the bucket head was published
