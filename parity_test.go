@@ -1,10 +1,11 @@
 package claygo
 
 import (
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -23,8 +24,8 @@ import (
 func TestSceneParity(t *testing.T) {
 	goldenNames := listGoldenFiles(t)
 	sceneNames := append(keys(goldenScenes), transitionKeys(goldenTransitionScenes)...)
-	sort.Strings(goldenNames)
-	sort.Strings(sceneNames)
+	slices.Sort(goldenNames)
+	slices.Sort(sceneNames)
 
 	checkParity(t, "goldenScenes", sceneNames, "testdata", goldenNames)
 
@@ -38,7 +39,7 @@ func TestSceneParity(t *testing.T) {
 		t.Fatalf("run %s --list: %v", oraclePath, err)
 	}
 	oracleNames := splitNonEmpty(string(out))
-	sort.Strings(oracleNames)
+	slices.Sort(oracleNames)
 
 	checkParity(t, "oracle --list", oracleNames, "testdata", goldenNames)
 	checkParity(t, "oracle --list", oracleNames, "goldenScenes", sceneNames)
@@ -60,24 +61,16 @@ func listGoldenFiles(t *testing.T) []string {
 }
 
 func keys(m map[string]func(*Context)) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	return out
+	return slices.Collect(maps.Keys(m))
 }
 
 func transitionKeys(m map[string]func(*Context) RenderCommandArray) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	return out
+	return slices.Collect(maps.Keys(m))
 }
 
 func splitNonEmpty(s string) []string {
 	out := []string{}
-	for _, line := range strings.Split(s, "\n") {
+	for line := range strings.SplitSeq(s, "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" {
 			out = append(out, line)

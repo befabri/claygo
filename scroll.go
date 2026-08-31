@@ -118,7 +118,7 @@ func (c *Context) UpdateScrollContainers(enableDragScrolling bool, scrollDelta V
 
 		// Find priority: the pointer-over hit with the latest index "wins"
 		// (the deepest hit in declaration order).
-		for j := int32(0); j < c.pointerOverIds.Length; j++ {
+		for j := range c.pointerOverIds.Length {
 			if sd.LayoutElement.ID == c.pointerOverIds.GetValue(j).ID {
 				highestPriorityIdx = j
 				highestPriority = sd
@@ -230,7 +230,7 @@ func (c *Context) UpdateScrollContainers(enableDragScrolling bool, scrollDelta V
 //
 // Mirrors Clay_GetScrollContainerData (oracle/clay.h ~line 4845).
 func (c *Context) GetScrollContainerData(id ElementID) ScrollContainerData {
-	for i := int32(0); i < c.scrollContainerDatas.Length; i++ {
+	for i := range c.scrollContainerDatas.Length {
 		sd := c.scrollContainerDatas.Get(i)
 		if sd.ElementID == id.ID {
 			return ScrollContainerData{
@@ -256,7 +256,7 @@ func (c *Context) GetScrollOffset() Vector2 {
 	if openLE == nil {
 		return Vector2{}
 	}
-	for i := int32(0); i < c.scrollContainerDatas.Length; i++ {
+	for i := range c.scrollContainerDatas.Length {
 		sd := c.scrollContainerDatas.Get(i)
 		if sd.ElementID == openLE.ID {
 			return sd.ScrollPosition
@@ -271,7 +271,7 @@ func (c *Context) GetScrollOffset() Vector2 {
 // until the next scrollContainerDatas.Add (which the caller doesn't trigger
 // after this call), so OK to mutate in place.
 func (c *Context) findOrCreateScrollContainer(le *LayoutElement) *scrollContainerDataInternal {
-	for i := int32(0); i < c.scrollContainerDatas.Length; i++ {
+	for i := range c.scrollContainerDatas.Length {
 		sd := c.scrollContainerDatas.Get(i)
 		if sd.ElementID == le.ID {
 			sd.LayoutElement = le

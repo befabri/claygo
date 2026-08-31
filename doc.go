@@ -91,7 +91,7 @@
 //	    // Drain commands and paint. For each cmd, switch on cmd.CommandType
 //	    // and read the matching field of cmd.RenderData (Rectangle, Text,
 //	    // Border, Image, Clip, OverlayColor, Custom).
-//	    for i := 0; i < cmds.Len(); i++ {
+//	    for i := range cmds.Len() {
 //	        cmd := cmds.Get(i)
 //	        _ = cmd // myRenderer.Submit(cmd)
 //	    }

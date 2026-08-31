@@ -1,6 +1,9 @@
 package claygo
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 // TestPointerStatePressTransitions exercises the press/release state machine
 // in SetPointerState. Mirrors the four PointerDataInteractionState values:
@@ -172,7 +175,7 @@ func TestOnHoverFiresBeforeAddingCurrentPointerOverID(t *testing.T) {
 				t.Fatalf("callback id = %d, want %d", id.ID, targetID.ID)
 			}
 			pointerOverDuringCallback = ctx.PointerOver(targetID)
-			idsDuringCallback = append([]ElementID(nil), ctx.GetPointerOverIds()...)
+			idsDuringCallback = slices.Clone(ctx.GetPointerOverIds())
 		}, nil)
 	})
 	ctx.EndLayout(0)

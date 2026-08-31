@@ -16,7 +16,7 @@ func TestSnapshotElementSubtreeZeroAlloc(t *testing.T) {
 		Layout:          LayoutConfig{Sizing: Sizing{Width: SizingFixed(120), Height: SizingFixed(120)}, LayoutDirection: TopToBottom},
 		BackgroundColor: RGBA(100, 100, 200, 255),
 	}, func() {
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			BoxIDOffset(ctx, "C", uint32(i), Decl{
 				Layout:          LayoutConfig{Sizing: Sizing{Width: SizingFixed(80), Height: SizingFixed(20)}},
 				BackgroundColor: RGBA(200, 50, 50, 255),
@@ -29,7 +29,7 @@ func TestSnapshotElementSubtreeZeroAlloc(t *testing.T) {
 
 	// Warm the reuse + identity buffers to their steady-state capacity.
 	var reuse []LayoutElement
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		reuse = ctx.snapshotElementSubtree(root, reuse)
 	}
 	if len(reuse) != 6 {
@@ -39,7 +39,7 @@ func TestSnapshotElementSubtreeZeroAlloc(t *testing.T) {
 	if got := reuse[0].Children.Length; got != 5 {
 		t.Fatalf("root snapshot children = %d, want 5", got)
 	}
-	for j := int32(0); j < 5; j++ {
+	for j := range int32(5) {
 		if got := reuse[0].Children.Data[j]; got != j+1 {
 			t.Fatalf("root child[%d] index = %d, want %d", j, got, j+1)
 		}

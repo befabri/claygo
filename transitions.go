@@ -45,7 +45,7 @@ type transitionDataInternal struct {
 // look up (or allocate) the persistent state for the currently-open element.
 // Mirrors the loop + Add at oracle/clay.h ~line 2186-2212.
 func (c *Context) findOrCreateTransitionData(openLE *LayoutElement, parent *LayoutElement, decl *Decl) {
-	for i := int32(0); i < c.transitionDatas.Length; i++ {
+	for i := range c.transitionDatas.Length {
 		existing := c.transitionDatas.Get(i)
 		if existing.ElementID != openLE.ID {
 			continue
@@ -89,7 +89,7 @@ func (c *Context) applyStoredTransitionToBoundingBox(element *LayoutElement, bbo
 	if element.Config.Transition.Handler == nil {
 		return false
 	}
-	for j := int32(0); j < c.transitionDatas.Length; j++ {
+	for j := range c.transitionDatas.Length {
 		td := c.transitionDatas.Get(j)
 		if td.ElementID != element.ID {
 			continue
@@ -291,7 +291,7 @@ func (c *Context) cloneElementsWithExitTransition() {
 	// ephemeral arena array we don't want to disturb here.
 	var bfs []cloneFrame
 
-	for i := int32(0); i < c.transitionDatas.Length; i++ {
+	for i := range c.transitionDatas.Length {
 		td := c.transitionDatas.Get(i)
 		if td.State != TransitionStateExiting || td.ElementThisFrame == nil {
 			continue
@@ -516,7 +516,7 @@ func (c *Context) reattachExitingClone(parent *LayoutElement, cloneIdx int32, td
 }
 
 func (c *Context) snapshotTransitionElements() {
-	for i := int32(0); i < c.transitionDatas.Length; i++ {
+	for i := range c.transitionDatas.Length {
 		data := c.transitionDatas.Get(i)
 		if data.ElementThisFrame != nil && data.ElementThisFrame.ID == data.ElementID {
 			// Reuse last frame's backing array so a stable subtree snapshots
@@ -558,7 +558,7 @@ func (c *Context) snapshotElementSubtree(root *LayoutElement, reuse []LayoutElem
 		arenaChildren := out[i].Children
 		firstChild := int32(len(out))
 		count := int32(0)
-		for j := int32(0); j < arenaChildren.Length; j++ {
+		for j := range arenaChildren.Length {
 			srcChild := c.layoutElements.GetCheckCapacity(arenaChildren.Data[j])
 			if srcChild.ID == 0 {
 				continue
@@ -636,7 +636,7 @@ func (c *Context) advanceTransitions(deltaTime float32) {
 			cfg := &currentElement.Config.Transition
 			parentAppeared := parentMapItem != nil && parentMapItem.AppearedThisFrame
 			canEnter := cfg.Enter.SetInitialState != nil &&
-				!(parentAppeared && cfg.Enter.Trigger == TransitionEnterSkipOnFirstParentFrame)
+				(!parentAppeared || cfg.Enter.Trigger != TransitionEnterSkipOnFirstParentFrame)
 			if canEnter {
 				td.State = TransitionStateEntering
 				td.InitialState = cfg.Enter.SetInitialState(td.TargetState, cfg.Properties)

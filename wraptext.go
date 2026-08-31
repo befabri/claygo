@@ -16,7 +16,7 @@ package claygo
 // collected during sizing(x). Must be called between sizing(x) and
 // sizing(y) so the y pass sees the final wrapped heights.
 func (c *Context) wrapTextElements() {
-	for ti := int32(0); ti < c.textElements.Length; ti++ {
+	for ti := range c.textElements.Length {
 		elementIdx := c.textElements.GetValue(ti)
 		element := c.layoutElements.Get(elementIdx)
 		textData := &element.TextElementData
@@ -91,10 +91,7 @@ func (c *Context) wrapTextElements() {
 				// when lineStartOffset+lineLengthChars==0 (newline at very start of
 				// content), C reads text[0]; we replicate by clamping idx to 0.
 				finalCharIsSpace := false
-				idx := lineStartOffset + lineLengthChars - 1
-				if idx < 0 {
-					idx = 0
-				}
+				idx := max(lineStartOffset+lineLengthChars-1, 0)
 				if int(idx) < len(text) && text[idx] == ' ' {
 					finalCharIsSpace = true
 				}
@@ -152,7 +149,7 @@ type textHeightFrame struct {
 // taller than they were at close-element time. Mirrors C 2649-2697.
 func (c *Context) propagateTextHeights() {
 	stack := c.textHeightFrameScratch[:0]
-	for rootIdx := int32(0); rootIdx < c.layoutElementTreeRoots.Length; rootIdx++ {
+	for rootIdx := range c.layoutElementTreeRoots.Length {
 		treeRoot := c.layoutElementTreeRoots.Get(rootIdx)
 		stack = append(stack[:0], textHeightFrame{element: c.layoutElements.Get(treeRoot.LayoutElementIndex)})
 
@@ -168,7 +165,7 @@ func (c *Context) propagateTextHeights() {
 				}
 				// Push children (order doesn't matter for the post-order
 				// recomputation since we only read child heights, not order).
-				for i := int32(0); i < cur.Children.Length; i++ {
+				for i := range cur.Children.Length {
 					stack = append(stack, textHeightFrame{element: c.layoutElements.Get(cur.Children.Data[i])})
 				}
 				continue
@@ -180,7 +177,7 @@ func (c *Context) propagateTextHeights() {
 			switch layoutCfg.LayoutDirection {
 			case LeftToRight:
 				// Cross-axis (height) = max(child.height + padding, current)
-				for j := int32(0); j < cur.Children.Length; j++ {
+				for j := range cur.Children.Length {
 					child := c.layoutElements.Get(cur.Children.Data[j])
 					childHWithPad := child.Dimensions.Height +
 						float32(layoutCfg.Padding.Top) + float32(layoutCfg.Padding.Bottom)
@@ -193,11 +190,11 @@ func (c *Context) propagateTextHeights() {
 			case TopToBottom:
 				// On-axis (height) = padding + sum(child.height) + gaps, clamped.
 				contentHeight := float32(layoutCfg.Padding.Top) + float32(layoutCfg.Padding.Bottom)
-				for j := int32(0); j < cur.Children.Length; j++ {
+				for j := range cur.Children.Length {
 					child := c.layoutElements.Get(cur.Children.Data[j])
 					contentHeight += child.Dimensions.Height
 				}
-				contentHeight += float32(maxInt32(cur.Children.Length-1, 0)) * float32(layoutCfg.ChildGap)
+				contentHeight += float32(max(cur.Children.Length-1, 0)) * float32(layoutCfg.ChildGap)
 				cur.Dimensions.Height = clampFloat32(contentHeight,
 					layoutCfg.Sizing.Height.MinMax.Min, layoutCfg.Sizing.Height.MinMax.Max)
 			}

@@ -1,6 +1,7 @@
 package claygo
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -254,7 +255,7 @@ func TestCustomElementEmitsCustomCommand(t *testing.T) {
 	cmds := ctx.EndLayout(0)
 
 	foundCustom := false
-	for i := 0; i < cmds.Len(); i++ {
+	for i := range cmds.Len() {
 		cmd := cmds.Get(i)
 		if cmd.CommandType != RenderCommandTypeCustom {
 			continue
@@ -301,7 +302,7 @@ func TestPointerCaptureModePassthrough(t *testing.T) {
 		})
 		ctx.EndLayout(0)
 		ctx.SetPointerState(Vector2{X: 50, Y: 50}, false)
-		return append([]ElementID(nil), ctx.GetPointerOverIds()...)
+		return slices.Clone(ctx.GetPointerOverIds())
 	}
 
 	lowerID := GetElementID("LowerFloat").ID
@@ -974,12 +975,7 @@ func TestDebugWarningsPaneRendersWarnings(t *testing.T) {
 }
 
 func hasElementID(ids []ElementID, id uint32) bool {
-	for _, got := range ids {
-		if got.ID == id {
-			return true
-		}
-	}
-	return false
+	return slices.IndexFunc(ids, func(got ElementID) bool { return got.ID == id }) >= 0
 }
 
 func keepTransitionRunning(TransitionCallbackArguments) bool { return false }
@@ -996,15 +992,7 @@ func rectOrder(commands []RenderCommand, include map[uint32]bool) []uint32 {
 }
 
 func sameUint32s(a, b []uint32) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
+	return slices.Equal(a, b)
 }
 
 // TestGetOpenElementIDOutsideFrame pins the documented "zero ElementID

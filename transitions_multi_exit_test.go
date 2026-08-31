@@ -252,7 +252,7 @@ func TestTransitionsMultiElementExitDoesNotLeakAcrossFrames(t *testing.T) {
 	// Subsequent frames: never declare again. With duration 0.1 and ~0.05
 	// deltaTime per frame, the exit animations should retire within a few
 	// frames.
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		ctx.BeginLayout()
 		ctx.EndLayout(0.05)
 		if ctx.transitionDatas.Length == 0 {

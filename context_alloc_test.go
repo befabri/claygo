@@ -83,7 +83,7 @@ func TestEphemeralResetClearsPointerBearingSlots(t *testing.T) {
 
 	childID := HashString(String{Text: "Child"}, 0).ID
 	slot := int32(-1)
-	for i := int32(0); i < ctx.layoutElements.Capacity; i++ {
+	for i := range ctx.layoutElements.Capacity {
 		if ctx.layoutElements.Data[i].ID == childID {
 			slot = i
 			break
@@ -164,7 +164,7 @@ func TestEphemeralResetClearsExitCloneRegion(t *testing.T) {
 	ctx.BeginLayout()
 	ctx.EndLayout(2.0)
 
-	for i := int32(0); i < ctx.layoutElements.Capacity; i++ {
+	for i := range ctx.layoutElements.Capacity {
 		if ctx.layoutElements.Data[i].ID == id {
 			t.Fatalf("exit-clone slot %d still holds element id %d after the exit completed; clone region not cleared", i, id)
 		}
@@ -228,7 +228,7 @@ func TestTwoPassRenderClearsFirstPassOnlyCommands(t *testing.T) {
 	}
 	// No render-command slot (including stale ones past Length) may retain the
 	// exiting element's command or its UserData.
-	for i := int32(0); i < ctx.renderCommands.Capacity; i++ {
+	for i := range ctx.renderCommands.Capacity {
 		cmd := ctx.renderCommands.Data[i]
 		if cmd.ID == exitingID {
 			t.Fatalf("renderCommands slot %d retains the exiting element's first-pass command", i)
@@ -341,7 +341,7 @@ func TestExitCloneCapacityErrorClearsWrittenClones(t *testing.T) {
 
 	// Frame 3's reset must clear every clone slot the overflowing frame-2 pass wrote.
 	ctx.BeginLayout()
-	for i := int32(0); i < ctx.layoutElements.Capacity; i++ {
+	for i := range ctx.layoutElements.Capacity {
 		if ctx.layoutElements.Data[i].Config.UserData == marker {
 			t.Fatalf("layoutElements slot %d still pins exit-clone UserData after reset; clone region not fully cleared", i)
 		}

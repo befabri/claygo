@@ -592,7 +592,7 @@ func sceneGrow7NonInt(c *Context) {
 		},
 		BackgroundColor: RGBA(30, 30, 36, 255),
 	}, func() {
-		for i := 0; i < 7; i++ {
+		for range 7 {
 			Box(c, Decl{
 				Layout:          LayoutConfig{Sizing: Sizing{Width: SizingGrow(0), Height: SizingFixed(60)}},
 				BackgroundColor: RGBA(200, 80, 80, 255),

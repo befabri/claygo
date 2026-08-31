@@ -259,14 +259,12 @@ func Initialize(arena Arena, layoutDimensions Dimensions, errorHandler ErrorHand
 	ctx.allocateEphemeralMemory()
 	ctx.resetEphemeralMemory()
 	// layoutElementsHashMap slots default to -1 ("empty bucket").
-	for i := int32(0); i < ctx.layoutElementsHashMap.Capacity; i++ {
+	for i := range ctx.layoutElementsHashMap.Capacity {
 		ctx.layoutElementsHashMap.Data[i] = -1
 	}
 	// measureTextHashMap slots default to 0 ("end of chain"); upstream
 	// reserves slot 0 of measureTextHashMapInternal as the null entry.
-	for i := int32(0); i < ctx.measureTextHashMap.Capacity; i++ {
-		ctx.measureTextHashMap.Data[i] = 0
-	}
+	clear(ctx.measureTextHashMap.Data)
 	ctx.measureTextHashMapInternal.Length = 1 // reserve slot 0
 	return ctx
 }
@@ -363,9 +361,7 @@ func (c *Context) resetEphemeralMemory() {
 	// Pre-grow to capacity-equivalent length so [idx] writes are valid, and zero
 	// it because it is indexed by element slot before that slot is written.
 	c.layoutElementClipElementIds.Length = c.layoutElementClipElementIds.Capacity
-	for i := int32(0); i < c.layoutElementClipElementIds.Length; i++ {
-		c.layoutElementClipElementIds.Data[i] = 0
-	}
+	clear(c.layoutElementClipElementIds.Data)
 }
 
 // SetMeasureTextFunction installs the user-supplied callback Clay uses to

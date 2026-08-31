@@ -198,7 +198,7 @@ func (c *Context) getHashMapItem(id uint32) *LayoutElementHashMapItem {
 }
 
 func (c *Context) pruneStaleHashMapItems() {
-	for bucket := int32(0); bucket < c.layoutElementsHashMap.Capacity; bucket++ {
+	for bucket := range c.layoutElementsHashMap.Capacity {
 		currentIndex := c.layoutElementsHashMap.Data[bucket]
 		previousIndex := int32(-1)
 		for currentIndex != -1 {

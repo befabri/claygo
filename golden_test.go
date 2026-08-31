@@ -90,10 +90,10 @@ type goldenCommand struct {
 	CornerRadius    *[4]float32 `json:"cornerRadius,omitempty"`
 	Width           *[5]uint16  `json:"width,omitempty"`
 	Text            *string     `json:"text,omitempty"`
-	FontID          uint16      `json:"fontId,omitempty"`
-	FontSize        uint16      `json:"fontSize,omitempty"`
-	LetterSpacing   uint16      `json:"letterSpacing,omitempty"`
-	LineHeight      uint16      `json:"lineHeight,omitempty"`
+	FontID          uint16      `json:"fontId,omitzero"`
+	FontSize        uint16      `json:"fontSize,omitzero"`
+	LetterSpacing   uint16      `json:"letterSpacing,omitzero"`
+	LineHeight      uint16      `json:"lineHeight,omitzero"`
 	Horizontal      *bool       `json:"horizontal,omitempty"`
 	Vertical        *bool       `json:"vertical,omitempty"`
 }

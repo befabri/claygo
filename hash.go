@@ -46,7 +46,7 @@ func HashNumber(offset, seed uint32) ElementID {
 // HashStringWithOffset calls.
 func HashString(key String, seed uint32) ElementID {
 	hash := seed
-	for i := 0; i < len(key.Text); i++ {
+	for i := range len(key.Text) {
 		hash += uint32(key.Text[i])
 		hash += hash << 10
 		hash ^= hash >> 6
@@ -70,7 +70,7 @@ func HashStringWithOffset(key String, offset, seed uint32) ElementID {
 	var hash uint32
 	base := seed
 
-	for i := 0; i < len(key.Text); i++ {
+	for i := range len(key.Text) {
 		base += uint32(key.Text[i])
 		base += base << 10
 		base ^= base >> 6

@@ -42,7 +42,7 @@ func TestArrayNewArrayStructBacking(t *testing.T) {
 	if arr.Capacity != 8 || len(arr.Data) != 8 {
 		t.Fatalf("unexpected backing: cap=%d len=%d", arr.Capacity, len(arr.Data))
 	}
-	for i := int32(0); i < 8; i++ {
+	for i := range int32(8) {
 		arr.Add(pointStruct{X: i, Y: i * 2})
 	}
 	if arr.Length != 8 {
@@ -151,7 +151,7 @@ func TestArrayGetCheckCapacity(t *testing.T) {
 	arr := NewArray[int32](4, arena)
 	arr.Add(11)
 	// Length == 1, but Capacity == 4: GetCheckCapacity should succeed for indices 0..3.
-	for i := int32(0); i < 4; i++ {
+	for i := range int32(4) {
 		p := arr.GetCheckCapacity(i)
 		if p == &arr.zero {
 			t.Errorf("GetCheckCapacity(%d) returned sentinel; expected real slot", i)
@@ -420,7 +420,7 @@ func TestArrayDataUsesTypedGoSlice(t *testing.T) {
 	if got.Data == nil {
 		t.Fatal("array data interface was not preserved")
 	}
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		arr.Set(0, pointerStruct{Text: "again", Data: map[string]int{"x": i}, Next: &value})
 	}
 	if arr.GetValue(0).Next != &value {

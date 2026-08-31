@@ -1,6 +1,7 @@
 package claygo
 
 import (
+	"slices"
 	"testing"
 )
 
@@ -33,12 +34,13 @@ func linearXInterpolator(args TransitionCallbackArguments) bool {
 // findRectCommand returns the (first) RECTANGLE command for the element with
 // the given id, or nil if none.
 func findRectCommand(commands []RenderCommand, id uint32) *RenderCommand {
-	for i := range commands {
-		if commands[i].CommandType == RenderCommandTypeRectangle && commands[i].ID == id {
-			return &commands[i]
-		}
+	i := slices.IndexFunc(commands, func(command RenderCommand) bool {
+		return command.CommandType == RenderCommandTypeRectangle && command.ID == id
+	})
+	if i < 0 {
+		return nil
 	}
-	return nil
+	return &commands[i]
 }
 
 // TestTransitionsRegisterEntry: declaring an element with a transition
@@ -193,7 +195,7 @@ func TestTransitionsEaseOutProgressesToTarget(t *testing.T) {
 	// Continue advancing time without changing layout until the transition
 	// completes. We give it many frames to ensure even ease-out tail reaches
 	// IDLE within numeric tolerance.
-	for i := 0; i < 30; i++ {
+	for range 30 {
 		frameRender(200, 0.05)
 		td := ctx.transitionDatas.Get(0)
 		if td.State == TransitionStateIdle {
@@ -353,7 +355,7 @@ func TestTransitionsExitTriggersWhenElementRemoved(t *testing.T) {
 // constraint.
 func TestTransitionsScenesWithoutHandlerUnchanged(t *testing.T) {
 	ctx := freshContext(t)
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		ctx.BeginLayout()
 		Box(ctx, Decl{
 			Layout:          LayoutConfig{Sizing: Sizing{Width: SizingFixed(100), Height: SizingFixed(100)}},

@@ -41,9 +41,7 @@ func (c *Context) ResetMeasureTextCache() {
 	c.measureTextHashMapInternalFreeList.Length = 0
 	c.measuredWords.Length = 0
 	c.measuredWordsFreeList.Length = 0
-	for i := int32(0); i < c.measureTextHashMap.Capacity; i++ {
-		c.measureTextHashMap.Data[i] = 0
-	}
+	clear(c.measureTextHashMap.Data)
 }
 
 // SetQueryScrollOffsetFunction installs a callback that Clay calls to read

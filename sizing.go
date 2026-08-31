@@ -33,7 +33,7 @@ func (c *Context) sizeContainersAlongAxis(xAxis bool) {
 
 	// Iterate every tree root: the auto-root (index 0) plus any floating
 	// element registered as its own root by configureOpenElement.
-	for rootIdx := int32(0); rootIdx < c.layoutElementTreeRoots.Length; rootIdx++ {
+	for rootIdx := range c.layoutElementTreeRoots.Length {
 		bfs.Length = 0
 		treeRoot := c.layoutElementTreeRoots.Get(rootIdx)
 		root := c.layoutElements.Get(treeRoot.LayoutElementIndex)
@@ -87,7 +87,7 @@ func (c *Context) sizeOneRoot(xAxis bool, bfs, resizable *Array[int32]) {
 		parentLayoutCfg := &parent.Config.Layout
 		growContainerCount := int32(0)
 		parentSize := parent.Dimensions.Width
-		var parentPadding float32 = float32(parentLayoutCfg.Padding.Left) + float32(parentLayoutCfg.Padding.Right)
+		parentPadding := float32(parentLayoutCfg.Padding.Left) + float32(parentLayoutCfg.Padding.Right)
 		if !xAxis {
 			parentSize = parent.Dimensions.Height
 			parentPadding = float32(parentLayoutCfg.Padding.Top) + float32(parentLayoutCfg.Padding.Bottom)
@@ -100,11 +100,11 @@ func (c *Context) sizeOneRoot(xAxis bool, bfs, resizable *Array[int32]) {
 		parentChildGap := float32(parentLayoutCfg.ChildGap)
 		isFirstChild := true
 
-		for childOffset := int32(0); childOffset < parent.Children.Length; childOffset++ {
+		for childOffset := range parent.Children.Length {
 			childIdx := parent.Children.Data[childOffset]
 			child := c.layoutElements.Get(childIdx)
 			childSizing := getElementSizing(child, xAxis)
-			var childSize float32 = child.Dimensions.Width
+			childSize := child.Dimensions.Width
 			if !xAxis {
 				childSize = child.Dimensions.Height
 			}
@@ -151,7 +151,7 @@ func (c *Context) sizeOneRoot(xAxis bool, bfs, resizable *Array[int32]) {
 
 		// Resolve PERCENT children now that we know the parent's total
 		// padding+gap consumption.
-		for childOffset := int32(0); childOffset < parent.Children.Length; childOffset++ {
+		for childOffset := range parent.Children.Length {
 			childIdx := parent.Children.Data[childOffset]
 			child := c.layoutElements.Get(childIdx)
 			childSizing := getElementSizing(child, xAxis)
@@ -200,12 +200,12 @@ func (c *Context) sizeOneRoot(xAxis bool, bfs, resizable *Array[int32]) {
 					maxSize = innerContentSize
 				}
 			}
-			for childOffset := int32(0); childOffset < resizable.Length; childOffset++ {
+			for childOffset := range resizable.Length {
 				childIdx := resizable.GetValue(childOffset)
 				child := c.layoutElements.Get(childIdx)
 				childSizing := getElementSizing(child, xAxis)
-				var minSize float32 = child.MinDimensions.Width
-				var sizePtr *float32 = &child.Dimensions.Width
+				minSize := child.MinDimensions.Width
+				sizePtr := &child.Dimensions.Width
 				if !xAxis {
 					minSize = child.MinDimensions.Height
 					sizePtr = &child.Dimensions.Height
@@ -239,9 +239,9 @@ func shrinkOverflow(c *Context, sizeToDistribute *float32, resizable *Array[int3
 	for *sizeToDistribute < -epsilon && resizable.Length > 0 {
 		var largest, secondLargest float32
 		widthToAdd := *sizeToDistribute
-		for ci := int32(0); ci < resizable.Length; ci++ {
+		for ci := range resizable.Length {
 			child := c.layoutElements.Get(resizable.GetValue(ci))
-			var cs float32 = child.Dimensions.Width
+			cs := child.Dimensions.Width
 			if !xAxis {
 				cs = child.Dimensions.Height
 			}
@@ -268,8 +268,8 @@ func shrinkOverflow(c *Context, sizeToDistribute *float32, resizable *Array[int3
 		ci := int32(0)
 		for ci < resizable.Length {
 			child := c.layoutElements.Get(resizable.GetValue(ci))
-			var sizePtr *float32 = &child.Dimensions.Width
-			var minSize float32 = child.MinDimensions.Width
+			sizePtr := &child.Dimensions.Width
+			minSize := child.MinDimensions.Width
 			if !xAxis {
 				sizePtr = &child.Dimensions.Height
 				minSize = child.MinDimensions.Height
@@ -310,9 +310,9 @@ func growUnderflow(c *Context, sizeToDistribute *float32, resizable *Array[int32
 		smallest := maxFloat32
 		secondSmallest := maxFloat32
 		widthToAdd := *sizeToDistribute
-		for ci := int32(0); ci < resizable.Length; ci++ {
+		for ci := range resizable.Length {
 			child := c.layoutElements.Get(resizable.GetValue(ci))
-			var cs float32 = child.Dimensions.Width
+			cs := child.Dimensions.Width
 			if !xAxis {
 				cs = child.Dimensions.Height
 			}
@@ -339,7 +339,7 @@ func growUnderflow(c *Context, sizeToDistribute *float32, resizable *Array[int32
 		for ci < resizable.Length {
 			child := c.layoutElements.Get(resizable.GetValue(ci))
 			childSizing := getElementSizing(child, xAxis)
-			var sizePtr *float32 = &child.Dimensions.Width
+			sizePtr := &child.Dimensions.Width
 			if !xAxis {
 				sizePtr = &child.Dimensions.Height
 			}

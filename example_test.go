@@ -45,7 +45,7 @@ func Example() {
 	cmds := ctx.EndLayout(0)
 
 	// Render commands ---------------------------------------------------
-	for i := 0; i < cmds.Len(); i++ {
+	for i := range cmds.Len() {
 		cmd := cmds.Get(i)
 		switch cmd.CommandType {
 		case claygo.RenderCommandTypeRectangle:

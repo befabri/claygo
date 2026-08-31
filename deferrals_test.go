@@ -75,7 +75,7 @@ func TestBoxIDOffsetProducesDistinctElements(t *testing.T) {
 			LayoutDirection: LeftToRight,
 		},
 	}, func() {
-		for i := uint32(0); i < 3; i++ {
+		for i := range uint32(3) {
 			BoxIDOffset(ctx, "Item", i, Decl{
 				Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(50), Height: SizingFixed(50)}},
 			}, nil)
@@ -132,7 +132,7 @@ func TestOffscreenCullingSkipsEmission(t *testing.T) {
 
 	count := func(cmds RenderCommandArray, col Color) int {
 		n := 0
-		for i := 0; i < cmds.Len(); i++ {
+		for i := range cmds.Len() {
 			if cmds.Get(i).CommandType == RenderCommandTypeRectangle &&
 				cmds.Get(i).RenderData.Rectangle.BackgroundColor == col {
 				n++
@@ -188,7 +188,7 @@ func TestWrapEmptyLineAtStartEdgeCase(t *testing.T) {
 	// Must not panic, must produce at least one TEXT command for the second
 	// line "hello world" (or words thereof).
 	textCmdCount := 0
-	for i := 0; i < cmds.Len(); i++ {
+	for i := range cmds.Len() {
 		if cmds.Get(i).CommandType == RenderCommandTypeText {
 			textCmdCount++
 		}

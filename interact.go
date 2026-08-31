@@ -110,7 +110,7 @@ func (c *Context) skipPointerTree(element *LayoutElement) bool {
 	if element.IsTextElement || element.Config.Transition.Handler == nil {
 		return false
 	}
-	for i := int32(0); i < c.transitionDatas.Length; i++ {
+	for i := range c.transitionDatas.Length {
 		data := c.transitionDatas.Get(i)
 		if data.ElementID != element.ID {
 			continue
@@ -134,7 +134,7 @@ func (c *Context) PointerState() PointerData { return c.pointerData }
 // element with the given id, using bboxes recorded during the previous
 // EndLayout. Mirrors Clay_PointerOver (oracle/clay.h ~line 4834).
 func (c *Context) PointerOver(id ElementID) bool {
-	for i := int32(0); i < c.pointerOverIds.Length; i++ {
+	for i := range c.pointerOverIds.Length {
 		if c.pointerOverIds.GetValue(i).ID == id.ID {
 			return true
 		}
@@ -155,7 +155,7 @@ func (c *Context) Hovered() bool {
 	if openLE == nil {
 		return false
 	}
-	for i := int32(0); i < c.pointerOverIds.Length; i++ {
+	for i := range c.pointerOverIds.Length {
 		if c.pointerOverIds.GetValue(i).ID == openLE.ID {
 			return true
 		}

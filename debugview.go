@@ -347,7 +347,7 @@ func (c *Context) debugElementList(userRoots int32, highlightedRow int32) ([]deb
 				LayoutDirection: TopToBottom,
 			},
 		}, func() {
-			for rootIdx := int32(0); rootIdx < userRoots; rootIdx++ {
+			for rootIdx := range userRoots {
 				root := c.layoutElementTreeRoots.Get(rootIdx)
 				if root == nil {
 					continue
@@ -567,7 +567,7 @@ func (c *Context) debugElementRow(idx int32, depth int32, rowEntries *[]debugRow
 	// currently collapsed.
 	collapsed := c.debugCollapsed != nil && c.debugCollapsed[el.ID]
 	if !el.IsTextElement && !collapsed {
-		for i := int32(0); i < el.Children.Length; i++ {
+		for i := range el.Children.Length {
 			childIdx := el.Children.Data[i]
 			c.debugElementRow(childIdx, depth+1, rowEntries)
 		}

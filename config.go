@@ -121,7 +121,7 @@ type TransitionElementConfig struct {
 }
 
 // Decl is the full element declaration passed to Box. Mirrors
-// Clay_ElementDeclaration but uses Go idioms (interface{}/any for opaque
+// Clay_ElementDeclaration but uses Go idioms (any for opaque
 // pointers, embedded configs).
 type Decl struct {
 	Layout          LayoutConfig

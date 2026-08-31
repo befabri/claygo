@@ -172,7 +172,7 @@ func (c *Context) configureOpenElement(decl Decl) {
 				} else if parentItem.LayoutElement != nil {
 					// Find the parent's index by pointer-walking layoutElements;
 					// parentItem.LayoutElement points into that backing array.
-					for i := int32(0); i < c.layoutElements.Length; i++ {
+					for i := range c.layoutElements.Length {
 						if c.layoutElements.Get(i) == parentItem.LayoutElement {
 							if i < c.layoutElementClipElementIds.Length {
 								clipElementID = c.layoutElementClipElementIds.Data[i]
@@ -276,7 +276,7 @@ func (c *Context) closeElement() {
 	case LeftToRight:
 		openLE.Dimensions.Width = leftRightPadding
 		openLE.MinDimensions.Width = leftRightPadding
-		for i := int32(0); i < childCount; i++ {
+		for i := range childCount {
 			childIdx := c.layoutElementChildrenBuffer.GetValue(
 				c.layoutElementChildrenBuffer.Length - childCount + i)
 			child := c.layoutElements.Get(childIdx)
@@ -293,7 +293,7 @@ func (c *Context) closeElement() {
 			}
 			c.layoutElementChildren.Add(childIdx)
 		}
-		childGap := float32(maxInt32(childCount-1, 0)) * float32(layoutCfg.ChildGap)
+		childGap := float32(max(childCount-1, 0)) * float32(layoutCfg.ChildGap)
 		openLE.Dimensions.Width += childGap
 		if !elementHasClipHorizontal {
 			openLE.MinDimensions.Width += childGap
@@ -301,7 +301,7 @@ func (c *Context) closeElement() {
 	case TopToBottom:
 		openLE.Dimensions.Height = topBottomPadding
 		openLE.MinDimensions.Height = topBottomPadding
-		for i := int32(0); i < childCount; i++ {
+		for i := range childCount {
 			childIdx := c.layoutElementChildrenBuffer.GetValue(
 				c.layoutElementChildrenBuffer.Length - childCount + i)
 			child := c.layoutElements.Get(childIdx)
@@ -317,7 +317,7 @@ func (c *Context) closeElement() {
 			}
 			c.layoutElementChildren.Add(childIdx)
 		}
-		childGap := float32(maxInt32(childCount-1, 0)) * float32(layoutCfg.ChildGap)
+		childGap := float32(max(childCount-1, 0)) * float32(layoutCfg.ChildGap)
 		openLE.Dimensions.Height += childGap
 		if !elementHasClipVertical {
 			openLE.MinDimensions.Height += childGap
@@ -411,15 +411,8 @@ func updateAspectRatioBox(le *LayoutElement) {
 	}
 }
 
-// maxInt32 / clampFloat32 are tiny helpers used by closeElement. Kept here
-// rather than in a generic utility file because this is the only consumer.
-func maxInt32(a, b int32) int32 {
-	if a > b {
-		return a
-	}
-	return b
-}
-
+// clampFloat32 is used by closeElement. It remains separate rather than using
+// min/max so NaN inputs retain their existing behavior.
 func clampFloat32(v, lo, hi float32) float32 {
 	if v < lo {
 		v = lo

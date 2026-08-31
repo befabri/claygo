@@ -53,7 +53,7 @@ func hashStringContentsWithConfig(text string, cfg *TextElementConfig) uint32 {
 	// Contents-only HashData: Bob-Jenkins one-at-a-time fold over bytes,
 	// then take mod UINT32_MAX (i.e. clamp 0xFFFFFFFF -> 0).
 	var contents uint64
-	for i := 0; i < len(text); i++ {
+	for i := range len(text) {
 		contents += uint64(text[i])
 		contents += contents << 10
 		contents ^= contents >> 6

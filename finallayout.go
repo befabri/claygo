@@ -84,7 +84,7 @@ func (c *Context) calculateFinalLayout() RenderCommandArray {
 	// so the O(n²) cost is irrelevant; we keep the stable in-place behavior
 	// of the C version so equal-zIndex roots stay in declaration order.
 	for sortMax := c.layoutElementTreeRoots.Length - 1; sortMax > 0; sortMax-- {
-		for i := int32(0); i < sortMax; i++ {
+		for i := range sortMax {
 			a := c.layoutElementTreeRoots.Get(i)
 			b := c.layoutElementTreeRoots.Get(i + 1)
 			if b.ZIndex < a.ZIndex {
@@ -105,7 +105,7 @@ func (c *Context) calculateFinalLayout() RenderCommandArray {
 
 	// One DFS per tree root. Roots emit into the same renderCommands array,
 	// so the final list is naturally in z-order.
-	for treeIdx := int32(0); treeIdx < c.layoutElementTreeRoots.Length; treeIdx++ {
+	for treeIdx := range c.layoutElementTreeRoots.Length {
 		c.emitTreeRoot(c.layoutElementTreeRoots.Get(treeIdx))
 	}
 
@@ -119,9 +119,9 @@ func (c *Context) calculateFinalLayout() RenderCommandArray {
 func (c *Context) collectAspectRatioElements() []int32 {
 	out := c.aspectRatioElementsScratch[:0]
 	stack := c.elementIndexScratch[:0]
-	for rootIdx := int32(0); rootIdx < c.layoutElementTreeRoots.Length; rootIdx++ {
+	for rootIdx := range c.layoutElementTreeRoots.Length {
 		root := c.layoutElements.Get(c.layoutElementTreeRoots.Get(rootIdx).LayoutElementIndex)
-		for i := int32(0); i < root.Children.Length; i++ {
+		for i := range root.Children.Length {
 			stack = append(stack, root.Children.Data[i])
 		}
 	}
@@ -135,7 +135,7 @@ func (c *Context) collectAspectRatioElements() []int32 {
 		if element.Config.AspectRatio.AspectRatio != 0 {
 			out = append(out, idx)
 		}
-		for i := int32(0); i < element.Children.Length; i++ {
+		for i := range element.Children.Length {
 			stack = append(stack, element.Children.Data[i])
 		}
 	}
@@ -298,7 +298,7 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 							Y: float32(layoutCfg.Padding.Top) - halfGap,
 						}
 						if layoutCfg.LayoutDirection == LeftToRight {
-							for i := int32(0); i < cur.Children.Length; i++ {
+							for i := range cur.Children.Length {
 								child := c.layoutElements.Get(cur.Children.Data[i])
 								if i > 0 {
 									c.emitCommand(RenderCommand{
@@ -320,7 +320,7 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 								borderOffset.X += child.Dimensions.Width + float32(layoutCfg.ChildGap)
 							}
 						} else {
-							for i := int32(0); i < cur.Children.Length; i++ {
+							for i := range cur.Children.Length {
 								child := c.layoutElements.Get(cur.Children.Data[i])
 								if i > 0 {
 									c.emitCommand(RenderCommand{
@@ -434,7 +434,7 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 			lineHeightOffset := (finalLineHeight - naturalLineHeight) / 2
 			yPosition := lineHeightOffset
 			textBase := cur.TextElementData.Text.Text
-			for lineIdx := int32(0); lineIdx < cur.TextElementData.WrappedLines.Length; lineIdx++ {
+			for lineIdx := range cur.TextElementData.WrappedLines.Length {
 				line := &cur.TextElementData.WrappedLines.Data[lineIdx]
 				if len(line.Line.Text) == 0 {
 					yPosition += finalLineHeight
@@ -588,7 +588,7 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 		// honor center/right/bottom alignment.
 		var contentSize Dimensions
 		if layoutCfg.LayoutDirection == LeftToRight {
-			for i := int32(0); i < cur.Children.Length; i++ {
+			for i := range cur.Children.Length {
 				child := c.layoutElements.Get(cur.Children.Data[i])
 				if child.Exiting {
 					continue
@@ -598,7 +598,7 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 					contentSize.Height = child.Dimensions.Height
 				}
 			}
-			contentSize.Width += float32(maxInt32(cur.Children.Length-1, 0)) * float32(layoutCfg.ChildGap)
+			contentSize.Width += float32(max(cur.Children.Length-1, 0)) * float32(layoutCfg.ChildGap)
 			extraSpace := cur.Dimensions.Width -
 				float32(layoutCfg.Padding.Left+layoutCfg.Padding.Right) - contentSize.Width
 			switch layoutCfg.ChildAlignment.X {
@@ -612,7 +612,7 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 			}
 			node.nextChildOffset.X += extraSpace
 		} else if layoutCfg.LayoutDirection == TopToBottom {
-			for i := int32(0); i < cur.Children.Length; i++ {
+			for i := range cur.Children.Length {
 				child := c.layoutElements.Get(cur.Children.Data[i])
 				if child.Exiting {
 					continue
@@ -622,7 +622,7 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 				}
 				contentSize.Height += child.Dimensions.Height
 			}
-			contentSize.Height += float32(maxInt32(cur.Children.Length-1, 0)) * float32(layoutCfg.ChildGap)
+			contentSize.Height += float32(max(cur.Children.Length-1, 0)) * float32(layoutCfg.ChildGap)
 			extraSpace := cur.Dimensions.Height -
 				float32(layoutCfg.Padding.Top+layoutCfg.Padding.Bottom) - contentSize.Height
 			switch layoutCfg.ChildAlignment.Y {
@@ -643,7 +643,7 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 		// the scroll offset so children are translated correctly below.
 		var scrollOffset Vector2
 		if cur.Config.Clip.Horizontal || cur.Config.Clip.Vertical {
-			for sci := int32(0); sci < c.scrollContainerDatas.Length; sci++ {
+			for sci := range c.scrollContainerDatas.Length {
 				sd := c.scrollContainerDatas.Get(sci)
 				if sd.ElementID != cur.ID {
 					continue
@@ -665,7 +665,7 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 		// processes them in declaration order.
 		childCount := int(cur.Children.Length)
 		startIdx := len(dfs)
-		for j := 0; j < childCount; j++ {
+		for range childCount {
 			dfs = append(dfs, layoutTreeNode{})
 			visited = append(visited, false)
 		}
@@ -674,7 +674,7 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 		// safe regardless of backing-array reallocation.
 		node = &dfs[idx]
 
-		for i := int32(0); i < cur.Children.Length; i++ {
+		for i := range cur.Children.Length {
 			child := c.layoutElements.Get(cur.Children.Data[i])
 
 			// Cross-axis ChildAlignment: for each individual child, set the
