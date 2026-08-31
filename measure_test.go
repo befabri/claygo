@@ -27,8 +27,7 @@ func deterministicMeasureTextForTest(text StringSlice, cfg *TextElementConfig, _
 // freshContext builds a Context with the deterministic measurer wired up.
 func freshContext(t *testing.T) *Context {
 	t.Helper()
-	mem := make([]byte, MinMemorySize())
-	arena := CreateArenaWithCapacityAndMemory(uint(len(mem)), mem)
+	arena := CreateArenaWithCapacity(MinMemorySize())
 	ctx := Initialize(arena, Dimensions{Width: 1280, Height: 720}, ErrorHandler{
 		Func: func(err ErrorData) {
 			t.Errorf("clay error: type=%d text=%q", err.Type, err.Text)
@@ -313,8 +312,7 @@ func TestAddGetHashMapItemRoundTrip(t *testing.T) {
 func contextCapturingErrors(t *testing.T) (*Context, *[]ErrorData) {
 	t.Helper()
 	var errs []ErrorData
-	mem := make([]byte, MinMemorySize())
-	arena := CreateArenaWithCapacityAndMemory(uint(len(mem)), mem)
+	arena := CreateArenaWithCapacity(MinMemorySize())
 	ctx := Initialize(arena, Dimensions{Width: 1280, Height: 720}, ErrorHandler{
 		Func: func(err ErrorData) { errs = append(errs, err) },
 	})

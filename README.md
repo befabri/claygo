@@ -7,8 +7,8 @@ of render commands that you draw however you like (SDL, OpenGL, a terminal, a
 canvas; claygo never touches a GPU itself).
 
 - **No cgo, no dependencies.** Standard library only.
-- **Capacity-bounded layout state.** You provide an arena-sized byte slice up
-  front; claygo reserves fixed-capacity internal buffers from that budget and
+- **Capacity-bounded layout state.** You provide an arena capacity up front;
+  claygo reserves fixed-capacity internal buffers from that budget and
   reports capacity overruns through your `ErrorHandler`.
 - **Immediate-mode API.** Re-declare your whole UI tree every frame; claygo
   diffs nothing and keeps no retained widget graph.
@@ -66,15 +66,13 @@ myRenderer.Draw(cmds)                         // 6. paint
 
 ### Memory model
 
-claygo asks you for a byte slice called the *arena*. In this Go port the arena
-is a capacity budget, not raw object storage: internal arrays are backed by
-typed Go slices so strings, interfaces, and function pointers remain visible to
-the garbage collector. Size the arena before `Initialize` and keep it alive for
-the lifetime of the `Context`:
+In this Go port the arena is a logical capacity budget, not raw object storage:
+internal arrays are backed by typed Go slices so strings, interfaces, and
+function pointers remain visible to the garbage collector. Size the arena
+before `Initialize`:
 
 ```go
-mem := make([]byte, claygo.MinMemorySize())
-arena := claygo.CreateArenaWithCapacityAndMemory(uint(len(mem)), mem)
+arena := claygo.CreateArenaWithCapacity(claygo.MinMemorySize())
 ctx := claygo.Initialize(arena,
     claygo.Dimensions{Width: 1280, Height: 720},
     claygo.ErrorHandler{Func: func(e claygo.ErrorData) {
@@ -89,7 +87,7 @@ more, call the package-level setters before `MinMemorySize` and `Initialize`:
 claygo.SetMaxElementCount(12000)
 claygo.SetMaxMeasureTextCacheWordCount(24000)
 
-mem := make([]byte, claygo.MinMemorySize())
+arena := claygo.CreateArenaWithCapacity(claygo.MinMemorySize())
 ```
 
 Changing those limits after a `Context` has been initialized does not resize
@@ -128,8 +126,7 @@ import (
 )
 
 func main() {
-    mem := make([]byte, claygo.MinMemorySize())
-    arena := claygo.CreateArenaWithCapacityAndMemory(uint(len(mem)), mem)
+    arena := claygo.CreateArenaWithCapacity(claygo.MinMemorySize())
     ctx := claygo.Initialize(arena,
         claygo.Dimensions{Width: 1280, Height: 720},
         claygo.ErrorHandler{Func: func(e claygo.ErrorData) {

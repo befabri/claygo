@@ -13,8 +13,7 @@ import (
 // compile, catching documentation rot.
 func Example() {
 	// One-time setup ----------------------------------------------------
-	mem := make([]byte, claygo.MinMemorySize())
-	arena := claygo.CreateArenaWithCapacityAndMemory(uint(len(mem)), mem)
+	arena := claygo.CreateArenaWithCapacity(claygo.MinMemorySize())
 	ctx := claygo.Initialize(arena,
 		claygo.Dimensions{Width: 320, Height: 240},
 		claygo.ErrorHandler{Func: func(e claygo.ErrorData) {

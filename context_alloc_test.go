@@ -288,9 +288,8 @@ func TestExitCloneCapacityErrorClearsWrittenClones(t *testing.T) {
 	}()
 	SetMaxElementCount(16)
 
-	mem := make([]byte, MinMemorySize())
 	var sawCapacityError bool
-	ctx := Initialize(CreateArenaWithCapacityAndMemory(uint(len(mem)), mem), Dimensions{Width: 1280, Height: 720}, ErrorHandler{
+	ctx := Initialize(CreateArenaWithCapacity(MinMemorySize()), Dimensions{Width: 1280, Height: 720}, ErrorHandler{
 		Func: func(err ErrorData) {
 			if err.Type == ErrorTypeElementsCapacityExceeded {
 				sawCapacityError = true

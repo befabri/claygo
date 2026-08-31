@@ -34,10 +34,10 @@
 //
 // # Memory model
 //
-// All internal state lives in a caller-supplied byte slice (the "arena"), so
-// the solver is allocation-free at steady state. Size the arena at startup
-// via MinMemorySize, pass it to CreateArenaWithCapacityAndMemory, and hand
-// the result to Initialize. The arena must outlive the Context.
+// Internal arrays use fixed-capacity typed Go slices so their pointer-bearing
+// values remain visible to the garbage collector and the solver is
+// allocation-free at steady state. Size their logical capacity budget with
+// MinMemorySize and CreateArenaWithCapacity.
 //
 // # Quick start
 //
@@ -49,8 +49,7 @@
 //	)
 //
 //	func main() {
-//	    mem := make([]byte, claygo.MinMemorySize())
-//	    arena := claygo.CreateArenaWithCapacityAndMemory(uint(len(mem)), mem)
+//	    arena := claygo.CreateArenaWithCapacity(claygo.MinMemorySize())
 //	    ctx := claygo.Initialize(arena,
 //	        claygo.Dimensions{Width: 1280, Height: 720},
 //	        claygo.ErrorHandler{Func: func(e claygo.ErrorData) {

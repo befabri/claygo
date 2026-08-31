@@ -152,12 +152,11 @@ type ElementID struct {
 	StringID String
 }
 
-// Arena is the bump-allocator backing all of Clay's internal data structures.
-// The caller supplies a byte slice large enough to satisfy MinMemorySize().
+// Arena tracks the logical capacity reserved by Clay's typed internal arrays.
+// Create one with CreateArenaWithCapacity and pass it to Initialize.
 type Arena struct {
 	NextAllocation uintptr
 	Capacity       uint
-	Memory         []byte
 }
 
 // ScrollContainerData is the runtime state of a scrolling element, returned by

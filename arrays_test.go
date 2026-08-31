@@ -5,8 +5,7 @@ import "testing"
 // newTestArena returns a freshly-allocated arena of the given byte capacity.
 func newTestArena(t *testing.T, capacity uint) *Arena {
 	t.Helper()
-	mem := make([]byte, capacity)
-	a := CreateArenaWithCapacityAndMemory(capacity, mem)
+	a := CreateArenaWithCapacity(capacity)
 	return &a
 }
 
@@ -402,9 +401,8 @@ func TestArrayArenaExhaustionSoftFail(t *testing.T) {
 	}
 }
 
-func TestArrayDataUsesTypedGoSliceNotArenaBytes(t *testing.T) {
-	mem := make([]byte, 4096)
-	arena := CreateArenaWithCapacityAndMemory(uint(len(mem)), mem)
+func TestArrayDataUsesTypedGoSlice(t *testing.T) {
+	arena := CreateArenaWithCapacity(4096)
 	arr := NewArray[pointerStruct](4, &arena)
 	if arr.Data == nil || len(arr.Data) != 4 {
 		t.Fatalf("NewArray returned Data len=%d, want 4", len(arr.Data))
@@ -415,13 +413,12 @@ func TestArrayDataUsesTypedGoSliceNotArenaBytes(t *testing.T) {
 
 	value := 42
 	arr.Add(pointerStruct{Text: "hello", Data: []string{"world"}, Next: &value})
-	clear(mem)
 	got := arr.GetValue(0)
 	if got.Text != "hello" {
-		t.Fatalf("array data changed after clearing arena bytes; got text %q", got.Text)
+		t.Fatalf("array text = %q, want hello", got.Text)
 	}
 	if got.Data == nil {
-		t.Fatalf("array data interface was cleared with arena bytes")
+		t.Fatal("array data interface was not preserved")
 	}
 	for i := 0; i < 10; i++ {
 		arr.Set(0, pointerStruct{Text: "again", Data: map[string]int{"x": i}, Next: &value})

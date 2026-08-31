@@ -2,7 +2,7 @@ package claygo
 
 import "reflect"
 
-// MinMemorySize returns the arena byte size Initialize requires for the
+// MinMemorySize returns the arena capacity Initialize requires for the
 // current max-element and word-cache counts. Package-level SetMaxElementCount /
 // SetMaxMeasureTextCacheWordCount before Initialize change the defaults; after
 // Initialize it follows the Context's configured caps.
@@ -69,15 +69,12 @@ var (
 	defaultMaxMeasureTextWordCacheSize int32 = 16384
 )
 
-// CreateArenaWithCapacityAndMemory wraps a caller-supplied byte slice as an
-// arena. The caller is responsible for keeping memory alive for as long as the
-// Context derived from this arena is in use.
-func CreateArenaWithCapacityAndMemory(capacity uint, memory []byte) Arena {
-	return Arena{
-		NextAllocation: 0,
-		Capacity:       capacity,
-		Memory:         memory,
-	}
+// CreateArenaWithCapacity creates a Go-native arena with the given logical
+// byte capacity. Internal arrays are backed by typed Go slices so strings,
+// interfaces, and function pointers remain visible to the garbage collector;
+// no duplicate byte buffer is needed.
+func CreateArenaWithCapacity(capacity uint) Arena {
+	return Arena{Capacity: capacity}
 }
 
 // alignUp rounds n up to the next multiple of align (which must be a power of two).
@@ -85,14 +82,18 @@ func alignUp(n, align uintptr) uintptr {
 	return (n + align - 1) &^ (align - 1)
 }
 
-// allocBytes carves a sub-slice out of the arena, advancing the bump pointer.
-// Returns nil if the request would exceed the arena's capacity.
-func (a *Arena) allocBytes(size, align uintptr) []byte {
-	start := alignUp(a.NextAllocation, align)
-	end := start + size
-	if end > uintptr(a.Capacity) {
-		return nil
+// reserveBytes advances the arena's logical bump pointer. The overflow checks
+// keep malformed public Arena values from wrapping into a valid range.
+func (a *Arena) reserveBytes(size, align uintptr) bool {
+	if align == 0 || align&(align-1) != 0 {
+		return false
 	}
+	start := alignUp(a.NextAllocation, align)
+	limit := uintptr(a.Capacity)
+	if start < a.NextAllocation || start > limit || size > limit-start {
+		return false
+	}
+	end := start + size
 	a.NextAllocation = end
-	return a.Memory[start:end]
+	return true
 }

@@ -41,8 +41,7 @@ func deterministicMeasureText(text StringSlice, cfg *TextElementConfig, _ any) D
 // render commands.
 func runScene(t *testing.T, build func(*Context)) RenderCommandArray {
 	t.Helper()
-	mem := make([]byte, MinMemorySize())
-	arena := CreateArenaWithCapacityAndMemory(uint(len(mem)), mem)
+	arena := CreateArenaWithCapacity(MinMemorySize())
 	ctx := Initialize(arena, goldenViewport, ErrorHandler{
 		Func: func(err ErrorData) {
 			t.Errorf("clay error: type=%d text=%q", err.Type, err.Text)

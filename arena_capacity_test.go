@@ -13,10 +13,13 @@ import (
 // Mirrors Clay__Array_Allocate_Arena (oracle/clay.h ~line 3963), which reports
 // through the current context's handler on every failed reservation.
 func TestUndersizedArenaReportsArenaCapacityExceeded(t *testing.T) {
+	previous := GetCurrentContext()
+	defer SetCurrentContext(previous)
+	SetCurrentContext(nil)
+
+	const capacity = uint(64 << 10) // far below MinMemorySize (~7.4 MB at defaults)
 	var got []ErrorData
-	mem := make([]byte, 64<<10) // far below MinMemorySize (~7.4 MB at defaults)
-	arena := CreateArenaWithCapacityAndMemory(uint(len(mem)), mem)
-	Initialize(arena, Dimensions{Width: 1280, Height: 720}, ErrorHandler{
+	Initialize(CreateArenaWithCapacity(capacity), Dimensions{Width: 1280, Height: 720}, ErrorHandler{
 		Func: func(err ErrorData) { got = append(got, err) },
 	})
 
@@ -26,6 +29,64 @@ func TestUndersizedArenaReportsArenaCapacityExceeded(t *testing.T) {
 		}
 	}
 	t.Fatalf("Initialize with a 64 KB arena fired no ErrorTypeArenaCapacityExceeded; got %d errors: %+v", len(got), got)
+}
+
+func TestArenaInitializesWithoutByteBuffer(t *testing.T) {
+	previous := GetCurrentContext()
+	defer SetCurrentContext(previous)
+	SetCurrentContext(nil)
+
+	var got []ErrorData
+	arena := CreateArenaWithCapacity(MinMemorySize())
+	ctx := Initialize(arena, Dimensions{Width: 320, Height: 200}, ErrorHandler{
+		Func: func(err ErrorData) { got = append(got, err) },
+	})
+	ctx.BeginLayout()
+	BoxID(ctx, "Box", Decl{Layout: LayoutConfig{Sizing: Sizing{
+		Width: SizingFixed(100), Height: SizingFixed(50),
+	}}, BackgroundColor: RGBA(255, 255, 255, 255)}, nil)
+	commands := ctx.EndLayout(0)
+
+	if len(got) != 0 {
+		t.Fatalf("arena reported errors: %+v", got)
+	}
+	if ctx.layoutElements.Length == 0 || commands.Len() == 0 || ctx.arena.NextAllocation == 0 {
+		t.Fatalf("arena did not initialize: elements=%d commands=%d next=%d", ctx.layoutElements.Length, commands.Len(), ctx.arena.NextAllocation)
+	}
+}
+
+func TestArenaReservationRejectsOverflow(t *testing.T) {
+	arena := CreateArenaWithCapacity(^uint(0))
+	arena.NextAllocation = ^uintptr(0) - 3
+	if arena.reserveBytes(8, 8) {
+		t.Fatal("overflowing reservation succeeded")
+	}
+	if arena.NextAllocation != ^uintptr(0)-3 {
+		t.Fatalf("failed reservation advanced arena to %d", arena.NextAllocation)
+	}
+
+	arena = CreateArenaWithCapacity(64)
+	if arena.reserveBytes(1, 3) {
+		t.Fatal("reservation with non-power-of-two alignment succeeded")
+	}
+	if arena.NextAllocation != 0 {
+		t.Fatalf("invalid alignment advanced arena to %d", arena.NextAllocation)
+	}
+	if !arena.reserveBytes(0, 1) {
+		t.Fatal("zero-byte reservation failed")
+	}
+	if arena.NextAllocation != 0 {
+		t.Fatalf("zero-byte reservation advanced arena to %d", arena.NextAllocation)
+	}
+	if !arena.reserveBytes(64, 1) || arena.NextAllocation != 64 {
+		t.Fatalf("exact-capacity reservation failed: next=%d", arena.NextAllocation)
+	}
+	if arena.reserveBytes(1, 1) {
+		t.Fatal("reservation beyond capacity succeeded")
+	}
+	if arena.NextAllocation != 64 {
+		t.Fatalf("failed over-capacity reservation advanced arena to %d", arena.NextAllocation)
+	}
 }
 
 // TestUndersizedArenaDoesNotHang reproduces the frame-2 infinite loop an
@@ -39,8 +100,7 @@ func TestUndersizedArenaReportsArenaCapacityExceeded(t *testing.T) {
 // contract under test is only that frames keep terminating and the failure
 // stays observable through the error handler rather than a livelock.
 func TestUndersizedArenaDoesNotHang(t *testing.T) {
-	mem := make([]byte, 64<<10)
-	arena := CreateArenaWithCapacityAndMemory(uint(len(mem)), mem)
+	arena := CreateArenaWithCapacity(64 << 10)
 	ctx := Initialize(arena, Dimensions{Width: 1280, Height: 720}, ErrorHandler{})
 	ctx.SetMeasureTextFunction(func(text StringSlice, cfg *TextElementConfig, _ any) Dimensions {
 		return Dimensions{Width: float32(len(text.Text)) * 6, Height: 8}

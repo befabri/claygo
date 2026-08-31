@@ -65,8 +65,7 @@ func BenchmarkEndLayoutNoTransitions(b *testing.B)   { benchEndLayout(b, false) 
 
 func freshContextB(b *testing.B) *Context {
 	b.Helper()
-	mem := make([]byte, MinMemorySize())
-	arena := CreateArenaWithCapacityAndMemory(uint(len(mem)), mem)
+	arena := CreateArenaWithCapacity(MinMemorySize())
 	ctx := Initialize(arena, Dimensions{Width: 1280, Height: 720}, ErrorHandler{
 		Func: func(err ErrorData) { b.Fatalf("clay error: type=%d %q", err.Type, err.Text) },
 	})

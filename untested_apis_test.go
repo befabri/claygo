@@ -760,8 +760,7 @@ func TestPackageMaxDefaultsAffectMinMemorySizeAndInitialize(t *testing.T) {
 		t.Fatalf("MinMemorySize after shrinking defaults = %d, want < original %d", resized, base)
 	}
 
-	mem := make([]byte, resized)
-	ctx := Initialize(CreateArenaWithCapacityAndMemory(uint(len(mem)), mem), Dimensions{Width: 100, Height: 100}, ErrorHandler{})
+	ctx := Initialize(CreateArenaWithCapacity(resized), Dimensions{Width: 100, Height: 100}, ErrorHandler{})
 	if ctx.MaxElementCount() != 128 {
 		t.Fatalf("initialized max elements = %d, want 128", ctx.MaxElementCount())
 	}
@@ -818,8 +817,7 @@ func TestSetLayoutDimensionsUpdatesRootResizedImmediately(t *testing.T) {
 
 func TestMeasureTextEntryCapacityReportsElementsCapacityError(t *testing.T) {
 	var errs []ErrorData
-	mem := make([]byte, MinMemorySize())
-	ctx := Initialize(CreateArenaWithCapacityAndMemory(uint(len(mem)), mem), Dimensions{Width: 100, Height: 100}, ErrorHandler{
+	ctx := Initialize(CreateArenaWithCapacity(MinMemorySize()), Dimensions{Width: 100, Height: 100}, ErrorHandler{
 		Func: func(err ErrorData) { errs = append(errs, err) },
 	})
 	ctx.SetMeasureTextFunction(deterministicMeasureTextForTest, nil)
@@ -835,8 +833,7 @@ func TestMeasureTextEntryCapacityReportsElementsCapacityError(t *testing.T) {
 
 func TestMeasuredWordsCapacityReportsTextMeasurementError(t *testing.T) {
 	var errs []ErrorData
-	mem := make([]byte, MinMemorySize())
-	ctx := Initialize(CreateArenaWithCapacityAndMemory(uint(len(mem)), mem), Dimensions{Width: 100, Height: 100}, ErrorHandler{
+	ctx := Initialize(CreateArenaWithCapacity(MinMemorySize()), Dimensions{Width: 100, Height: 100}, ErrorHandler{
 		Func: func(err ErrorData) { errs = append(errs, err) },
 	})
 	ctx.SetMeasureTextFunction(deterministicMeasureTextForTest, nil)
@@ -852,8 +849,7 @@ func TestMeasuredWordsCapacityReportsTextMeasurementError(t *testing.T) {
 
 func TestRenderCommandCapacityUsesCapacityMinusOne(t *testing.T) {
 	var errs []ErrorData
-	mem := make([]byte, MinMemorySize())
-	ctx := Initialize(CreateArenaWithCapacityAndMemory(uint(len(mem)), mem), Dimensions{Width: 100, Height: 100}, ErrorHandler{
+	ctx := Initialize(CreateArenaWithCapacity(MinMemorySize()), Dimensions{Width: 100, Height: 100}, ErrorHandler{
 		Func: func(err ErrorData) { errs = append(errs, err) },
 	})
 	ctx.renderCommands.Length = ctx.renderCommands.Capacity - 1
@@ -949,8 +945,7 @@ func TestFloatingClipSyntheticCommandsMatchOracleFields(t *testing.T) {
 }
 
 func TestDebugWarningsPaneRendersWarnings(t *testing.T) {
-	mem := make([]byte, MinMemorySize())
-	ctx := Initialize(CreateArenaWithCapacityAndMemory(uint(len(mem)), mem), Dimensions{Width: 640, Height: 480}, ErrorHandler{Func: func(ErrorData) {}})
+	ctx := Initialize(CreateArenaWithCapacity(MinMemorySize()), Dimensions{Width: 640, Height: 480}, ErrorHandler{Func: func(ErrorData) {}})
 	ctx.SetMeasureTextFunction(deterministicMeasureTextForTest, nil)
 	ctx.SetDebugModeEnabled(true)
 

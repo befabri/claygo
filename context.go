@@ -229,13 +229,12 @@ func (c *Context) reportError(t ErrorType, text string) {
 	c.errorHandler.Func(data)
 }
 
-// Initialize allocates and returns a Context backed by the caller-supplied
-// arena. The arena must be at least MinMemorySize() bytes.
+// Initialize allocates and returns a Context whose typed internal arrays are
+// bounded by arena. Its capacity must be at least MinMemorySize().
 //
 // Mirrors Clay_Initialize + Clay__InitializePersistentMemory +
 // Clay__InitializeEphemeralMemory (oracle/clay.h ~lines 4184, 2245, 2220).
-// The order of allocations matters: it determines the byte layout in the
-// arena, which affects MinMemorySize.
+// The order of reservations matters because alignment affects MinMemorySize.
 func Initialize(arena Arena, layoutDimensions Dimensions, errorHandler ErrorHandler) *Context {
 	maxElements := defaultMaxElementCount
 	maxWords := defaultMaxMeasureTextWordCacheSize

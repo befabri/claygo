@@ -126,8 +126,7 @@ func sceneExitNestedChildPlain(c *Context) RenderCommandArray {
 // EndLayout assumption.
 func runTransitionScene(t *testing.T, frames func(*Context) RenderCommandArray) RenderCommandArray {
 	t.Helper()
-	mem := make([]byte, MinMemorySize())
-	arena := CreateArenaWithCapacityAndMemory(uint(len(mem)), mem)
+	arena := CreateArenaWithCapacity(MinMemorySize())
 	ctx := Initialize(arena, goldenViewport, ErrorHandler{
 		Func: func(err ErrorData) {
 			t.Errorf("clay error: type=%d text=%q", err.Type, err.Text)

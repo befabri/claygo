@@ -32,7 +32,10 @@ func NewArray[T any](capacity int32, arena *Arena) Array[T] {
 	}
 	if arena != nil {
 		typ := reflect.TypeFor[T]()
-		if arena.allocBytes(uintptr(capacity)*typ.Size(), uintptr(typ.Align())) == nil {
+		count := uintptr(capacity)
+		elementSize := typ.Size()
+		fitsAddressSpace := elementSize == 0 || count <= ^uintptr(0)/elementSize
+		if !fitsAddressSpace || !arena.reserveBytes(count*elementSize, uintptr(typ.Align())) {
 			if currentContext != nil {
 				currentContext.reportError(ErrorTypeArenaCapacityExceeded,
 					"Clay attempted to allocate memory in its arena, but ran out of capacity. Try increasing the capacity of the arena passed to Clay_Initialize()")
