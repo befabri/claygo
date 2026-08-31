@@ -196,3 +196,27 @@ func (c *Context) getHashMapItem(id uint32) *LayoutElementHashMapItem {
 	}
 	return nil
 }
+
+func (c *Context) pruneStaleHashMapItems() {
+	for bucket := int32(0); bucket < c.layoutElementsHashMap.Capacity; bucket++ {
+		currentIndex := c.layoutElementsHashMap.Data[bucket]
+		previousIndex := int32(-1)
+		for currentIndex != -1 {
+			current := c.layoutElementsHashMapInternal.Get(currentIndex)
+			nextIndex := current.NextIndex
+			if current.Generation <= c.generation {
+				c.layoutElementsHashMapInternal.Set(currentIndex, LayoutElementHashMapItem{NextIndex: -1})
+				c.layoutElementsHashMapFreeList.Add(currentIndex)
+				if previousIndex == -1 {
+					c.layoutElementsHashMap.Data[bucket] = nextIndex
+				} else {
+					c.layoutElementsHashMapInternal.Get(previousIndex).NextIndex = nextIndex
+				}
+				currentIndex = nextIndex
+				continue
+			}
+			previousIndex = currentIndex
+			currentIndex = nextIndex
+		}
+	}
+}

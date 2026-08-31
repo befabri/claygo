@@ -501,11 +501,13 @@ func (c *Context) EndLayout(deltaTime float32) RenderCommandArray {
 		result := c.calculateFinalLayout()
 		c.useStoredBoundingBoxes = false
 		c.snapshotTransitionElements()
+		c.pruneStaleHashMapItems()
 		c.rootResizedLastFrame = false
 		return result
 	}
 
 	result := c.calculateFinalLayout()
+	c.pruneStaleHashMapItems()
 	c.rootResizedLastFrame = false
 	return result
 }

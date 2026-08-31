@@ -432,3 +432,59 @@ func TestHashMapGenerationStaleReplaces(t *testing.T) {
 			ctx.layoutElementsHashMapInternal.Length, internalLenAfterFrame1)
 	}
 }
+
+// TestEndLayoutReclaimsStaleHashMapEntries covers element ID churn across frames.
+func TestEndLayoutReclaimsStaleHashMapEntries(t *testing.T) {
+	previous := GetCurrentContext()
+	SetCurrentContext(nil)
+	oldMax := GetMaxElementCount()
+	defer func() {
+		SetCurrentContext(nil)
+		SetMaxElementCount(oldMax)
+		SetCurrentContext(previous)
+	}()
+
+	const maxElements int32 = 16
+	SetMaxElementCount(maxElements)
+	var errors []ErrorData
+	ctx := Initialize(CreateArenaWithCapacity(MinMemorySize()), Dimensions{Width: 100, Height: 100}, ErrorHandler{
+		Func: func(err ErrorData) { errors = append(errors, err) },
+	})
+	ctx.SetMeasureTextFunction(deterministicMeasureTextForTest, nil)
+
+	var previousID ElementID
+	missingCurrentFrame := -1
+	staleIDFrame := -1
+	for frame := range int(maxElements * 2) {
+		ctx.BeginLayout()
+		BoxIDOffset(ctx, "Rotating", uint32(frame), Decl{Layout: LayoutConfig{Sizing: Sizing{
+			Width: SizingFixed(10), Height: SizingFixed(10),
+		}}}, nil)
+		ctx.EndLayout(0)
+
+		currentID := GetElementIDWithIndex("Rotating", uint32(frame))
+		if !ctx.GetElementData(currentID).Found && missingCurrentFrame < 0 {
+			missingCurrentFrame = frame
+		}
+		if frame > 0 && ctx.GetElementData(previousID).Found && staleIDFrame < 0 {
+			staleIDFrame = frame - 1
+		}
+		previousID = currentID
+	}
+
+	for _, err := range errors {
+		if err.Type == ErrorTypeHashMapCapacityExceeded {
+			t.Fatalf("rotating one element across %d frames exhausted a %d-element hashmap: %s",
+				maxElements*2, maxElements, err.Text)
+		}
+	}
+	if len(errors) != 0 {
+		t.Fatalf("rotating element IDs reported unexpected errors: %+v", errors)
+	}
+	if missingCurrentFrame >= 0 {
+		t.Fatalf("frame %d current ID was not retained through EndLayout", missingCurrentFrame)
+	}
+	if staleIDFrame >= 0 {
+		t.Fatalf("stale ID from frame %d was not reclaimed by the following EndLayout", staleIDFrame)
+	}
+}

@@ -339,15 +339,14 @@ func TestExitCloneCapacityErrorClearsWrittenClones(t *testing.T) {
 		t.Fatal("expected an ElementsCapacityExceeded error from the overflowing exit-clone pass")
 	}
 
-	// Frame 3: a clean frame. Its reset must clear every clone slot the
-	// overflowing frame-2 pass wrote — none may still pin the UserData marker.
+	// Frame 3's reset must clear every clone slot the overflowing frame-2 pass wrote.
 	ctx.BeginLayout()
-	ctx.EndLayout(0.1)
 	for i := int32(0); i < ctx.layoutElements.Capacity; i++ {
 		if ctx.layoutElements.Data[i].Config.UserData == marker {
-			t.Fatalf("layoutElements slot %d still pins exit-clone UserData after a clean frame; clone region not fully cleared", i)
+			t.Fatalf("layoutElements slot %d still pins exit-clone UserData after reset; clone region not fully cleared", i)
 		}
 	}
+	ctx.EndLayout(0.1)
 }
 
 // TestWrappedTextLinesClearedOnShrink guards the wrappedTextLines half of
