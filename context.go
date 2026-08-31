@@ -140,6 +140,14 @@ type Context struct {
 	// what keeps subtree snapshots allocation-free in steady state.
 	snapshotIndexIdentity []int32
 
+	// Reused traversal stacks for calculateFinalLayout. Keeping these on the
+	// context avoids allocating temporary slices on every immediate-mode frame.
+	aspectRatioElementsScratch []int32
+	elementIndexScratch        []int32
+	layoutTreeNodeScratch      []layoutTreeNode
+	visitedNodeScratch         []bool
+	textHeightFrameScratch     []textHeightFrame
+
 	// prevLayoutElementsLow / prevLayoutElementsCloneStart record which
 	// layoutElements slots the previous frame dirtied, so resetEphemeralMemory
 	// clears only those. The live tree occupies [0, prevLayoutElementsLow); an
@@ -182,7 +190,7 @@ type Context struct {
 	// debug string pools (layoutElementIdStrings, dynamicStringData) — the Go
 	// debug view reads names off the hashmap and uses strconv — and the
 	// fixed-capacity DFS scratch arrays (layoutElementTreeNodeArray1 etc.),
-	// which the Go port replaces with per-call slices.
+	// which the Go port replaces with lazily grown, context-owned slices.
 }
 
 // layoutElementTreeRoot is one entry in Context.layoutElementTreeRoots:

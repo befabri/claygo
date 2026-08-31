@@ -142,17 +142,19 @@ func (c *Context) wrapTextElements() {
 	}
 }
 
+type textHeightFrame struct {
+	element *LayoutElement
+	visited bool
+}
+
 // propagateTextHeights walks the layout tree post-order, recomputing parent
 // heights from their children. Necessary after text wrapping grows leaves
 // taller than they were at close-element time. Mirrors C 2649-2697.
 func (c *Context) propagateTextHeights() {
-	type frame struct {
-		element *LayoutElement
-		visited bool
-	}
+	stack := c.textHeightFrameScratch[:0]
 	for rootIdx := int32(0); rootIdx < c.layoutElementTreeRoots.Length; rootIdx++ {
 		treeRoot := c.layoutElementTreeRoots.Get(rootIdx)
-		stack := []frame{{element: c.layoutElements.Get(treeRoot.LayoutElementIndex)}}
+		stack = append(stack[:0], textHeightFrame{element: c.layoutElements.Get(treeRoot.LayoutElementIndex)})
 
 		for len(stack) > 0 {
 			top := &stack[len(stack)-1]
@@ -167,7 +169,7 @@ func (c *Context) propagateTextHeights() {
 				// Push children (order doesn't matter for the post-order
 				// recomputation since we only read child heights, not order).
 				for i := int32(0); i < cur.Children.Length; i++ {
-					stack = append(stack, frame{element: c.layoutElements.Get(cur.Children.Data[i])})
+					stack = append(stack, textHeightFrame{element: c.layoutElements.Get(cur.Children.Data[i])})
 				}
 				continue
 			}
@@ -201,4 +203,5 @@ func (c *Context) propagateTextHeights() {
 			}
 		}
 	}
+	c.textHeightFrameScratch = stack[:0]
 }

@@ -33,6 +33,32 @@ func TestEphemeralMemoryReusedAcrossFrames(t *testing.T) {
 	}
 }
 
+// TestFinalLayoutTraversalScratchIsReused pins the renderer-facing solver
+// pass to zero steady-state allocations. The tree includes nested children and
+// an aspect-ratio element so every traversal stack does real work.
+func TestFinalLayoutTraversalScratchIsReused(t *testing.T) {
+	ctx := freshContext(t)
+	ctx.BeginLayout()
+	BoxID(ctx, "Parent", Decl{
+		Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(300), Height: SizingFixed(200)}},
+	}, func() {
+		BoxID(ctx, "AspectChild", Decl{
+			Layout:      LayoutConfig{Sizing: Sizing{Width: SizingFixed(100), Height: SizingFixed(100)}},
+			AspectRatio: AspectRatioElementConfig{AspectRatio: 1},
+		}, nil)
+	})
+	ctx.EndLayout(0)
+
+	for range 3 {
+		ctx.calculateFinalLayout()
+	}
+	if avg := testing.AllocsPerRun(500, func() {
+		ctx.calculateFinalLayout()
+	}); avg != 0 {
+		t.Errorf("calculateFinalLayout allocates %v/call after warmup, want 0", avg)
+	}
+}
+
 // TestEphemeralResetClearsPointerBearingSlots guards the memory-hygiene side of
 // reusing (rather than reallocating) the ephemeral arrays. Because the backing
 // is reused, a slot that held a pointer-bearing element last frame would keep

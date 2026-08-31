@@ -117,8 +117,8 @@ func (c *Context) calculateFinalLayout() RenderCommandArray {
 }
 
 func (c *Context) collectAspectRatioElements() []int32 {
-	var out []int32
-	var stack []int32
+	out := c.aspectRatioElementsScratch[:0]
+	stack := c.elementIndexScratch[:0]
 	for rootIdx := int32(0); rootIdx < c.layoutElementTreeRoots.Length; rootIdx++ {
 		root := c.layoutElements.Get(c.layoutElementTreeRoots.Get(rootIdx).LayoutElementIndex)
 		for i := int32(0); i < root.Children.Length; i++ {
@@ -139,6 +139,8 @@ func (c *Context) collectAspectRatioElements() []int32 {
 			stack = append(stack, element.Children.Data[i])
 		}
 	}
+	c.aspectRatioElementsScratch = out
+	c.elementIndexScratch = stack[:0]
 	return out
 }
 
@@ -212,15 +214,15 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 		}
 	}
 
-	dfs := []layoutTreeNode{{
+	dfs := append(c.layoutTreeNodeScratch[:0], layoutTreeNode{
 		element:  root,
 		position: rootPosition,
 		nextChildOffset: Vector2{
 			X: float32(root.Config.Layout.Padding.Left),
 			Y: float32(root.Config.Layout.Padding.Top),
 		},
-	}}
-	visited := []bool{false}
+	})
+	visited := append(c.visitedNodeScratch[:0], false)
 
 	rootChildCount := root.Children.Length
 	// Downward render commands emitted under this tree root carry the root's
@@ -731,6 +733,8 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 			}
 		}
 	}
+	c.layoutTreeNodeScratch = dfs[:0]
+	c.visitedNodeScratch = visited[:0]
 
 	// Close the floating-tree-root scissor opened above, if any.
 	if emitClipBound {
