@@ -488,3 +488,68 @@ func TestEndLayoutReclaimsStaleHashMapEntries(t *testing.T) {
 		t.Fatalf("stale ID from frame %d was not reclaimed by the following EndLayout", staleIDFrame)
 	}
 }
+
+// TestCapacityGuardConsultsRecycledSlots pins the capacity guard to the append
+// path: internal Length is a high-water mark that pruning never lowers, so a
+// guard ahead of the free list (or of the same-ID reuse walk) would permanently
+// reject every element once one frame pair drove the mark to capacity.
+func TestCapacityGuardConsultsRecycledSlots(t *testing.T) {
+	previous := GetCurrentContext()
+	SetCurrentContext(nil)
+	oldMax := GetMaxElementCount()
+	defer func() {
+		SetCurrentContext(nil)
+		SetMaxElementCount(oldMax)
+		SetCurrentContext(previous)
+	}()
+
+	const maxElements int32 = 16
+	SetMaxElementCount(maxElements)
+	var errors []ErrorData
+	ctx := Initialize(CreateArenaWithCapacity(MinMemorySize()), Dimensions{Width: 100, Height: 100}, ErrorHandler{
+		Func: func(err ErrorData) { errors = append(errors, err) },
+	})
+	ctx.SetMeasureTextFunction(deterministicMeasureTextForTest, nil)
+	decl := Decl{Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(10), Height: SizingFixed(10)}}}
+
+	// Drive the high-water mark to capacity-1 without ever exceeding the live
+	// budget: frame 1's six elements are still resident while frame 2 adds
+	// eight fresh ones, so peak in-use is 1 (root) + 6 + 8 = capacity - 1.
+	ctx.BeginLayout()
+	for i := range 6 {
+		BoxIDOffset(ctx, "Warm", uint32(i), decl, nil)
+	}
+	ctx.EndLayout(0)
+	ctx.BeginLayout()
+	for i := range 8 {
+		BoxIDOffset(ctx, "Burst", uint32(i), decl, nil)
+	}
+	ctx.EndLayout(0)
+	if len(errors) != 0 {
+		t.Fatalf("ratchet frames stayed within capacity yet reported: %+v", errors)
+	}
+	highWater := ctx.layoutElementsHashMapInternal.Length
+	if highWater != maxElements-1 {
+		t.Fatalf("ratchet reached internal Length %d, want %d", highWater, maxElements-1)
+	}
+
+	// With the mark at capacity-1, small frames must keep working off the free
+	// list: the stable ID reuses its slot and each churned ID takes a recycled one.
+	stableID := GetElementID("Stable")
+	for frame := range 10 {
+		ctx.BeginLayout()
+		BoxID(ctx, "Stable", decl, nil)
+		BoxIDOffset(ctx, "Churn", uint32(frame), decl, nil)
+		ctx.EndLayout(0)
+		if len(errors) != 0 {
+			t.Fatalf("frame %d after the high-water ratchet reported: %+v", frame, errors)
+		}
+		if !ctx.GetElementData(stableID).Found {
+			t.Fatalf("frame %d after the high-water ratchet lost the stable element", frame)
+		}
+	}
+	if ctx.layoutElementsHashMapInternal.Length != highWater {
+		t.Fatalf("steady churn grew internal Length to %d, want it held at %d",
+			ctx.layoutElementsHashMapInternal.Length, highWater)
+	}
+}

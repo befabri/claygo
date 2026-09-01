@@ -107,14 +107,6 @@ type LayoutElementHashMapItem struct {
 //
 // Returns the stored item, or nil if capacity was exceeded.
 func (c *Context) addHashMapItem(elementID ElementID, element *LayoutElement) *LayoutElementHashMapItem {
-	if c.layoutElementsHashMapInternal.Length >= c.layoutElementsHashMapInternal.Capacity-1 {
-		if !c.warnHashMapCapacityExceeded {
-			c.reportError(ErrorTypeHashMapCapacityExceeded,
-				"Clay has run out of space in its internal element ID hashmap. Try using SetMaxElementCount() with a higher value.")
-			c.warnHashMapCapacityExceeded = true
-		}
-		return nil
-	}
 	item := LayoutElementHashMapItem{
 		ElementID:         elementID,
 		LayoutElement:     element,
@@ -157,10 +149,22 @@ func (c *Context) addHashMapItem(elementID ElementID, element *LayoutElement) *L
 		hashItemIndex = hashItem.NextIndex
 	}
 
+	// The capacity guard must sit on the append path only: internal.Length is a
+	// high-water mark that pruneStaleHashMapItems never lowers, so checking it
+	// before the free list (or before the reuse walk above) would permanently
+	// reject new slots once the mark reaches capacity, even with most slots
+	// recycled and idle.
 	var indexToUse int32
 	if c.layoutElementsHashMapFreeList.Length > 0 {
 		indexToUse = c.layoutElementsHashMapFreeList.GetValue(c.layoutElementsHashMapFreeList.Length - 1)
 		c.layoutElementsHashMapFreeList.Length--
+	} else if c.layoutElementsHashMapInternal.Length >= c.layoutElementsHashMapInternal.Capacity-1 {
+		if !c.warnHashMapCapacityExceeded {
+			c.reportError(ErrorTypeHashMapCapacityExceeded,
+				"Clay has run out of space in its internal element ID hashmap. Try using SetMaxElementCount() with a higher value.")
+			c.warnHashMapCapacityExceeded = true
+		}
+		return nil
 	} else {
 		indexToUse = c.layoutElementsHashMapInternal.Length
 	}
