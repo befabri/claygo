@@ -12,7 +12,14 @@
 // can use the same measurement to compare apples to apples.
 
 #define CLAY_IMPLEMENTATION
+// The default build compiles the extended header (clay.h + patches/, generated
+// by the Makefile) and knows every scene. -DCLAY_ORACLE_UPSTREAM compiles the
+// verbatim clay.h and only the upstream scenes; `make verify` uses both.
+#ifdef CLAY_ORACLE_UPSTREAM
 #include "clay.h"
+#else
+#include "clay_ext.h"
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>

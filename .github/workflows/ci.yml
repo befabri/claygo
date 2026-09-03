@@ -17,12 +17,11 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: Build oracle binaries
+        run: make -C oracle all
+
       - name: Go tests (port + parity against committed goldens)
         run: go test ./...
 
       - name: Oracle reproducibility guard
-        # Rebuilds the C oracle from the pinned clay.h, regenerates every golden,
-        # and fails if any committed golden changed. Catches stale goldens and
-        # clay.h bumps committed without regenerating. Also makes the oracle
-        # binary present so go test's --list cross-check runs instead of skipping.
         run: make -C oracle verify
