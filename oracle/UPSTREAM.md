@@ -65,3 +65,27 @@ code physically separated from the ported files. The default path stays
 byte-identical to upstream; `make verify` proves it every run. The process
 for adding one, and the checklist of what has gone wrong before, is
 `docs/extensions.md`; this section is the catalogue.
+
+### Child wrap
+
+| | |
+|---|---|
+| What | `LayoutConfig.WrapChildren`: children that do not fit on the layout axis start a new line (rows for `LeftToRight`, columns for `TopToBottom`), with per-line grow, alignment, gaps, dividers, scroll content size, transitions and the debug view. |
+| Why | Upstream has text wrapping only; box wrapping is hand-rolled in every consumer with fixed widths and clipped labels. |
+| Upstream issue | nicbarker/clay #17 and #454, no maintainer movement. |
+| C reference | `patches/child-wrap.h` (every function, plain C) and `patches/0001-child-wrap.patch` (the splice: the `wrapChildren` field, `Clay__WrapLine`, element and context fields, one-line hooks, the `#include`). |
+| Go files | `wrapchildren.go` (all wrap logic), `wrapchildren_test.go`, `scenes_ext_test.go`. |
+| Hook sites | A few lines calling into `wrapchildren.go` in `element.go` (`closeElement`), `sizing.go` (`sizeOneRoot`), `wraptext.go` (`propagateTextHeights`), `finallayout.go` (`calculateFinalLayout`, `emitTreeRoot`), `transitions.go` (exit clones), `debugview.go`, `context.go`/`arena.go` (line pool). The C patch hooks the same functions, every hook line tagged `claygo extension: child wrap`. |
+| Scenes | `ext_wrap_rows_*`, `ext_wrap_cols_*`, `ext_wrap_exit_transition`. |
+| Semantics | `docs/child-wrap-spec.md`. The invariant: a wrapping parent whose children fit on one line lays out byte-identically to the same parent without the flag (`TestWrapIdentityProperty` runs the whole upstream corpus that way). |
+| If upstream ships wrapping | Port upstream's under its name. If the semantics match, keep `WrapChildren` for one minor version as an alias; otherwise remove it in the next major. Drop the patch, its header, and the `ext_` scenes that upstream's own scenes cover. |
+
+Rebasing after a bump, or changing a hook: `make rebase-patch` writes
+`clay_ext.h.work` (the patch applied with fuzz; hunks that still fail land in
+`clay_ext.h.work.rej`), edit that file as C and delete the `.rej`, then
+`make refresh-patch` rewrites the patch with current context and proves it
+applies with `--fuzz=0`, then `make verify`. The build itself never uses
+fuzz: a hunk that fails is reported by number and the patch is rejected as a
+whole, so a half-applied header can never produce goldens. Changing the
+functions themselves is an edit to `patches/child-wrap.h` and needs no patch
+work.

@@ -17,7 +17,9 @@ canvas; claygo never touches a GPU itself).
   them.
 - **Parity-tested against upstream Clay.** A C oracle (`oracle/`) is compiled
   from the original `clay.h` and its output is compared against claygo's in the
-  test suite.
+  test suite. Parity covers the upstream feature set; the few claygo
+  extensions (below) are oracle-tested the same way through a patched copy of
+  the header.
 
 ## Which Go port of Clay should I use?
 
@@ -264,6 +266,48 @@ claygo.BoxID(ctx, "Pane", claygo.Decl{
 For host-managed scroll views, enable external scroll handling with
 `ctx.SetExternalScrollHandlingEnabled(true)` and install
 `ctx.SetQueryScrollOffsetFunction(...)`.
+
+## Extensions beyond upstream Clay
+
+claygo adds a small number of features upstream Clay does not have. Each is
+off by default (zero value), leaves the default path byte-identical to
+upstream, and has its own C reference implementation applied as a patch on top
+of the vendored header, so it is golden-tested like everything else. The
+divergences are catalogued in `oracle/UPSTREAM.md` under "Extensions"; the
+process for adding one is `docs/extensions.md`.
+
+### Child wrapping (`LayoutConfig.WrapChildren`)
+
+Upstream Clay wraps text but never boxes: a row that runs out of width either
+shrinks its children or overflows. `WrapChildren` makes children that do not
+fit on the layout axis start a new line, rows stacked top to bottom for
+`LeftToRight`, columns stacked left to right for `TopToBottom`:
+
+```go
+claygo.Box(ctx, claygo.Decl{
+    Layout: claygo.LayoutConfig{
+        Sizing:       claygo.Sizing{Width: claygo.SizingGrow(), Height: claygo.SizingFit()},
+        ChildGap:     8,
+        WrapChildren: true, // as many chips per row as fit, then a new row
+    },
+}, func() {
+    for _, label := range labels {
+        chip(ctx, label) // a FIT-width box; no column arithmetic needed
+    }
+})
+```
+
+Lines break greedily, in declaration order, at the sizes children have before
+`Grow` distributes space; `Grow` children then share their own line's slack.
+`ChildGap` separates lines as well as children, `ChildAlignment` places each
+line's content on the layout axis and each child within its line on the cross
+axis, between-children borders draw within and between lines, and a clipping
+wrap parent reports the stacked lines as its scroll content. A wrapping parent
+whose children fit on one line lays out **exactly** as it would without the
+flag (the test suite runs the entire upstream corpus with the flag forced on).
+Column wrap needs child heights before it can break, so a frame that contains
+one runs the sizing sweep twice; frames without pay nothing. Full semantics:
+`docs/child-wrap-spec.md`.
 
 ## Thread safety
 
