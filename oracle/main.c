@@ -1038,6 +1038,7 @@ static Clay_RenderCommandArray scene_ext_wrap_rows_basic(void) {
             .padding = CLAY_PADDING_ALL(8),
             .childGap = 8,
             .wrapChildren = true,
+            .wrapLineGap = 8,
         },
         .backgroundColor = { 30, 30, 36, 255 },
     }) {
@@ -1060,6 +1061,7 @@ static Clay_RenderCommandArray scene_ext_wrap_rows_single_line(void) {
                     .childGap = 8,
                     .childAlignment = { CLAY_ALIGN_X_CENTER, CLAY_ALIGN_Y_CENTER },
                     .wrapChildren = strip == 0,
+                    .wrapLineGap = 8,
                 },
                 .backgroundColor = { 30, 30, 36, 255 },
             }) {
@@ -1083,6 +1085,7 @@ static Clay_RenderCommandArray scene_ext_wrap_rows_grow(void) {
             .padding = CLAY_PADDING_ALL(8),
             .childGap = 8,
             .wrapChildren = true,
+            .wrapLineGap = 8,
         },
         .backgroundColor = { 30, 30, 36, 255 },
     }) {
@@ -1106,6 +1109,7 @@ static Clay_RenderCommandArray scene_ext_wrap_rows_percent(void) {
             .padding = CLAY_PADDING_ALL(10),
             .childGap = 10,
             .wrapChildren = true,
+            .wrapLineGap = 10,
         },
         .backgroundColor = { 30, 30, 36, 255 },
     }) {
@@ -1130,6 +1134,7 @@ static Clay_RenderCommandArray scene_ext_wrap_rows_aligned(Clay_ChildAlignment a
             .childGap = 6,
             .childAlignment = alignment,
             .wrapChildren = true,
+            .wrapLineGap = 6,
         },
         .backgroundColor = { 30, 30, 36, 255 },
     }) {
@@ -1162,6 +1167,7 @@ static Clay_RenderCommandArray scene_ext_wrap_rows_gap_borders(void) {
             .padding = CLAY_PADDING_ALL(8),
             .childGap = 9,
             .wrapChildren = true,
+            .wrapLineGap = 9,
         },
         .backgroundColor = { 30, 30, 36, 255 },
         .border = {
@@ -1185,6 +1191,7 @@ static Clay_RenderCommandArray scene_ext_wrap_rows_lone_wide(void) {
             .padding = CLAY_PADDING_ALL(8),
             .childGap = 8,
             .wrapChildren = true,
+            .wrapLineGap = 8,
         },
         .backgroundColor = { 30, 30, 36, 255 },
     }) {
@@ -1216,6 +1223,7 @@ static Clay_RenderCommandArray scene_ext_wrap_rows_text_children(void) {
             .childGap = 8,
             .childAlignment = { CLAY_ALIGN_X_LEFT, CLAY_ALIGN_Y_CENTER },
             .wrapChildren = true,
+            .wrapLineGap = 8,
         },
         .backgroundColor = { 30, 30, 36, 255 },
     }) {
@@ -1257,6 +1265,7 @@ static Clay_RenderCommandArray scene_ext_wrap_rows_fit_in_grow(void) {
                 .padding = CLAY_PADDING_ALL(6),
                 .childGap = 6,
                 .wrapChildren = true,
+                .wrapLineGap = 6,
             },
             .backgroundColor = { 80, 80, 120, 255 },
         }) {
@@ -1276,6 +1285,7 @@ static Clay_RenderCommandArray scene_ext_wrap_rows_clip_scroll(void) {
             .padding = CLAY_PADDING_ALL(8),
             .childGap = 8,
             .wrapChildren = true,
+            .wrapLineGap = 8,
         },
         .backgroundColor = { 30, 30, 36, 255 },
         .clip = { .horizontal = true, .vertical = true, .childOffset = { 0, -30 } },
@@ -1296,6 +1306,7 @@ static Clay_RenderCommandArray scene_ext_wrap_rows_nested(void) {
             .padding = CLAY_PADDING_ALL(8),
             .childGap = 8,
             .wrapChildren = true,
+            .wrapLineGap = 8,
         },
         .backgroundColor = { 30, 30, 36, 255 },
     }) {
@@ -1307,6 +1318,7 @@ static Clay_RenderCommandArray scene_ext_wrap_rows_nested(void) {
                 .padding = CLAY_PADDING_ALL(4),
                 .childGap = 4,
                 .wrapChildren = true,
+                .wrapLineGap = 4,
             },
             .backgroundColor = { 80, 80, 120, 255 },
         }) {
@@ -1336,6 +1348,7 @@ static void ext_declare_wrap_exit(bool withB) {
             .padding = CLAY_PADDING_ALL(8),
             .childGap = 8,
             .wrapChildren = true,
+            .wrapLineGap = 8,
         },
         .backgroundColor = { 30, 30, 36, 255 },
     }) {
@@ -1371,6 +1384,7 @@ static Clay_RenderCommandArray scene_ext_wrap_cols_fixed_height(void) {
             .childGap = 8,
             .layoutDirection = CLAY_TOP_TO_BOTTOM,
             .wrapChildren = true,
+            .wrapLineGap = 8,
         },
         .backgroundColor = { 30, 30, 36, 255 },
     }) {
@@ -1393,6 +1407,7 @@ static Clay_RenderCommandArray scene_ext_wrap_cols_grow_height(void) {
             .childGap = 8,
             .layoutDirection = CLAY_TOP_TO_BOTTOM,
             .wrapChildren = true,
+            .wrapLineGap = 8,
         },
         .backgroundColor = { 30, 30, 36, 255 },
     }) {
@@ -1439,6 +1454,7 @@ static Clay_RenderCommandArray scene_ext_wrap_clip_shrink(void) {
                     .padding = CLAY_PADDING_ALL(8),
                     .childGap = 8,
                     .wrapChildren = true,
+                    .wrapLineGap = 8,
                 },
                 .backgroundColor = { 80, 80, 120, 255 },
                 .clip = { .horizontal = true, .vertical = true },
@@ -1463,6 +1479,7 @@ static Clay_RenderCommandArray scene_ext_wrap_clip_shrink(void) {
                     .childGap = 8,
                     .layoutDirection = CLAY_TOP_TO_BOTTOM,
                     .wrapChildren = true,
+                    .wrapLineGap = 8,
                 },
                 .backgroundColor = { 80, 80, 120, 255 },
                 .clip = { .horizontal = true, .vertical = true },
@@ -1487,6 +1504,7 @@ static Clay_RenderCommandArray scene_ext_wrap_rows_short_parent(void) {
             .sizing = { CLAY_SIZING_FIXED(120), CLAY_SIZING_FIXED(40) },
             .childGap = 10,
             .wrapChildren = true,
+            .wrapLineGap = 10,
         },
         .backgroundColor = { 30, 30, 36, 255 },
         .border = {
@@ -1515,6 +1533,7 @@ static Clay_RenderCommandArray scene_ext_wrap_cols_clip_grow(void) {
                     .childGap = 8,
                     .layoutDirection = CLAY_TOP_TO_BOTTOM,
                     .wrapChildren = true,
+                    .wrapLineGap = 8,
                 },
                 .backgroundColor = { 30, 30, 36, 255 },
                 .clip = { .horizontal = pane == 1, .vertical = pane == 1 },
@@ -1527,6 +1546,130 @@ static Clay_RenderCommandArray scene_ext_wrap_cols_clip_grow(void) {
     }
     return Clay_EndLayout(0.0f);
 }
+// wrapLineGap is independent of childGap. Seven 85 px chips in a 300-wide
+// strip (inner 284) take three per line (3*85 + 2*8 = 271), so lines of 3, 3
+// and 1. The first strip stacks them 24 apart, the second 0 apart, which
+// childGap alone could never express: fit heights 16 + 3*30 + 2*24 = 154 and
+// 16 + 3*30 = 106.
+static Clay_RenderCommandArray scene_ext_wrap_rows_line_gap(void) {
+    static const uint16_t lineGaps[2] = { 24, 0 };
+    Clay_BeginLayout();
+    CLAY_AUTO_ID({ .layout = { .sizing = { CLAY_SIZING_FIT(0), CLAY_SIZING_FIT(0) }, .childGap = 16, .layoutDirection = CLAY_TOP_TO_BOTTOM } }) {
+        for (int strip = 0; strip < 2; strip++) {
+            CLAY_AUTO_ID({
+                .layout = {
+                    .sizing = { CLAY_SIZING_FIXED(300), CLAY_SIZING_FIT(0) },
+                    .padding = CLAY_PADDING_ALL(8),
+                    .childGap = 8,
+                    .wrapChildren = true,
+                    .wrapLineGap = lineGaps[strip],
+                },
+                .backgroundColor = { 30, 30, 36, 255 },
+            }) {
+                for (int i = 0; i < 7; i++) ext_chip(i, 85, 30);
+            }
+        }
+    }
+    return Clay_EndLayout(0.0f);
+}
+
+// Cross-axis slack with a line gap that is not the child gap. Six chips pack
+// as [90,120], [60,100,80], [110] in inner 284; natural extents 30, 40 and 28
+// stack to 98 + 2*20 of line gap = 138, so 204 - 138 = 66 px of slack goes to
+// the lines smallest first before each child aligns inside its line.
+static Clay_RenderCommandArray scene_ext_wrap_rows_line_gap_slack(void) {
+    Clay_BeginLayout();
+    CLAY_AUTO_ID({
+        .layout = {
+            .sizing = { CLAY_SIZING_FIXED(300), CLAY_SIZING_FIXED(220) },
+            .padding = CLAY_PADDING_ALL(8),
+            .childGap = 8,
+            .childAlignment = { CLAY_ALIGN_X_CENTER, CLAY_ALIGN_Y_CENTER },
+            .wrapChildren = true,
+            .wrapLineGap = 20,
+        },
+        .backgroundColor = { 30, 30, 36, 255 },
+    }) {
+        ext_chip(0, 90, 20);
+        ext_chip(1, 120, 30);
+        ext_chip(2, 60, 24);
+        ext_chip(3, 100, 20);
+        ext_chip(4, 80, 40);
+        ext_chip(5, 110, 28);
+    }
+    return Clay_EndLayout(0.0f);
+}
+
+// Both gaps odd and different, so the two halvings cannot be confused for one
+// another: childGap 7 centers within-line dividers at half 3, wrapLineGap 13
+// centers between-line dividers and the band edges at half 6. Seven 80 px
+// chips in inner 284 pack three per line; fit height 16 + 3*30 + 2*13 = 132.
+static Clay_RenderCommandArray scene_ext_wrap_rows_line_gap_borders(void) {
+    Clay_BeginLayout();
+    CLAY_AUTO_ID({
+        .layout = {
+            .sizing = { CLAY_SIZING_FIXED(300), CLAY_SIZING_FIT(0) },
+            .padding = CLAY_PADDING_ALL(8),
+            .childGap = 7,
+            .wrapChildren = true,
+            .wrapLineGap = 13,
+        },
+        .backgroundColor = { 30, 30, 36, 255 },
+        .border = {
+            .color = { 240, 200, 80, 255 },
+            .width = { .betweenChildren = 2 },
+        },
+    }) {
+        for (int i = 0; i < 7; i++) ext_chip(i, 80, 30);
+    }
+    return Clay_EndLayout(0.0f);
+}
+
+// Column wrap with the axes swapped: childGap 6 separates cells down a
+// column, wrapLineGap 20 separates the columns across. Seven cells 50 tall in
+// inner 184 take three per column (3*50 + 2*6 = 162), so columns of 3, 3 and
+// 1, and the 304 px of inner width leaves slack for the columns to share.
+static Clay_RenderCommandArray scene_ext_wrap_cols_line_gap(void) {
+    static const float widths[7] = { 60, 70, 50, 80, 55, 65, 45 };
+    Clay_BeginLayout();
+    CLAY_AUTO_ID({
+        .layout = {
+            .sizing = { CLAY_SIZING_FIXED(320), CLAY_SIZING_FIXED(200) },
+            .padding = CLAY_PADDING_ALL(8),
+            .childGap = 6,
+            .layoutDirection = CLAY_TOP_TO_BOTTOM,
+            .wrapChildren = true,
+            .wrapLineGap = 20,
+        },
+        .backgroundColor = { 30, 30, 36, 255 },
+    }) {
+        for (int i = 0; i < 7; i++) ext_chip(i, widths[i], 50);
+    }
+    return Clay_EndLayout(0.0f);
+}
+
+// A clipping wrap pane whose scroll content must stack on the line gap, not
+// the child gap: nine 80 px chips in inner 284 make three lines of 30, so the
+// content is 3*80 + 2*8 + 16 wide and 3*30 + 2*22 + 16 = 150 tall, and the
+// third line sits at 8 + 2*(30 + 22).
+static Clay_RenderCommandArray scene_ext_wrap_rows_line_gap_scroll(void) {
+    Clay_BeginLayout();
+    CLAY_AUTO_ID({
+        .layout = {
+            .sizing = { CLAY_SIZING_FIXED(300), CLAY_SIZING_FIXED(80) },
+            .padding = CLAY_PADDING_ALL(8),
+            .childGap = 8,
+            .wrapChildren = true,
+            .wrapLineGap = 22,
+        },
+        .backgroundColor = { 30, 30, 36, 255 },
+        .clip = { .horizontal = true, .vertical = true, .childOffset = { 0, -30 } },
+    }) {
+        for (int i = 0; i < 9; i++) ext_chip(i, 80, 30);
+    }
+    return Clay_EndLayout(0.0f);
+}
+
 #endif // CLAY_ORACLE_UPSTREAM
 
 // ---------------------------------------------------------------------------
@@ -1594,6 +1737,11 @@ static Scene SCENES[] = {
     { "ext_wrap_clip_shrink",             scene_ext_wrap_clip_shrink             },
     { "ext_wrap_rows_short_parent",       scene_ext_wrap_rows_short_parent       },
     { "ext_wrap_cols_clip_grow",          scene_ext_wrap_cols_clip_grow          },
+    { "ext_wrap_rows_line_gap",           scene_ext_wrap_rows_line_gap           },
+    { "ext_wrap_rows_line_gap_slack",     scene_ext_wrap_rows_line_gap_slack     },
+    { "ext_wrap_rows_line_gap_borders",   scene_ext_wrap_rows_line_gap_borders   },
+    { "ext_wrap_cols_line_gap",           scene_ext_wrap_cols_line_gap           },
+    { "ext_wrap_rows_line_gap_scroll",    scene_ext_wrap_rows_line_gap_scroll    },
 #endif
 };
 static const int SCENE_COUNT = (int)(sizeof(SCENES) / sizeof(SCENES[0]));

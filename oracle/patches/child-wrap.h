@@ -5,10 +5,10 @@
 // the CLAY_IMPLEMENTATION section of the verbatim clay.h, directly in front of
 // Clay__SizeContainersAlongAxis, so every type, macro and function Clay has
 // defined by that point is visible here. The patch itself carries only what
-// must live inside upstream's own structs and functions: the config field,
-// the line type, the element and context fields, and one-line hooks tagged
-// "claygo extension: child wrap". Everything else about the feature is in
-// this file, as ordinary C: edit it, rebuild, `make verify`.
+// must live inside upstream's own structs and functions: the two config
+// fields, the line type, the element and context fields, and one-line hooks
+// tagged "claygo extension: child wrap". Everything else about the feature is
+// in this file, as ordinary C: edit it, rebuild, `make verify`.
 //
 // The Go port mirrors this file function for function in wrapchildren.go;
 // the semantics are written up in docs/child-wrap-spec.md.
@@ -172,7 +172,7 @@ void Clay__WrapUpdateCrossContent(Clay_Context *context, Clay_LayoutElement *par
     if (!publish) {
         return;
     }
-    float gaps = (float)(CLAY__MAX(parent->wrapLines.length - 1, 0) * layoutConfig->childGap);
+    float gaps = (float)(CLAY__MAX(parent->wrapLines.length - 1, 0) * layoutConfig->wrapLineGap);
     content += gaps;
     minContent += gaps;
     // Padding is added side by side, matching upstream's `height + top + bottom`.
@@ -215,7 +215,7 @@ void Clay__WrapDistributeExtents(Clay_Context *context, Clay_LayoutElement *pare
         Clay__WrapLineArraySlice_Get(&parent->wrapLines, 0)->extent = innerSize;
         return;
     }
-    stacked += (float)(CLAY__MAX(lineCount - 1, 0) * layoutConfig->childGap);
+    stacked += (float)(CLAY__MAX(lineCount - 1, 0) * layoutConfig->wrapLineGap);
     float sizeToDistribute = innerSize - stacked;
     if (sizeToDistribute < 0) {
         while (sizeToDistribute < -CLAY__EPSILON && lineIndexBuffer->length > 0) {
@@ -536,11 +536,11 @@ void Clay__WrapPositionChildren(Clay_Context *context, Clay__LayoutElementTreeNo
                 alongCursor += Clay__WrapAxisSize(childElement, rows) + (float)layoutConfig->childGap;
             }
         }
-        crossCursor += CLAY__MAX(line->extent, lineCrossContent) + (float)layoutConfig->childGap;
+        crossCursor += CLAY__MAX(line->extent, lineCrossContent) + (float)layoutConfig->wrapLineGap;
         alongContent = CLAY__MAX(alongContent, lineContent);
         crossContent += lineCrossContent;
     }
-    crossContent += (float)(CLAY__MAX(currentElement->wrapLines.length - 1, 0) * layoutConfig->childGap);
+    crossContent += (float)(CLAY__MAX(currentElement->wrapLines.length - 1, 0) * layoutConfig->wrapLineGap);
     if (scrollContainerData) {
         Clay_Dimensions contentSize = rows ? CLAY__INIT(Clay_Dimensions) { alongContent, crossContent } : CLAY__INIT(Clay_Dimensions) { crossContent, alongContent };
         scrollContainerData->contentSize = CLAY__INIT(Clay_Dimensions) { contentSize.width + (float)(layoutConfig->padding.left + layoutConfig->padding.right), contentSize.height + (float)(layoutConfig->padding.top + layoutConfig->padding.bottom) };
@@ -551,13 +551,15 @@ void Clay__WrapPositionChildren(Clay_Context *context, Clay__LayoutElementTreeNo
 // upstream's formula but span only the line's band; between lines a divider
 // spans the parent's full size, mirroring upstream's other-direction formula.
 // Bands tile the parent: line i runs from the previous line's edge plus half a
-// gap to the next line's edge minus half a gap, with the outer lines reaching
-// the parent's edges.
+// line gap to the next line's edge minus half a line gap, with the outer lines
+// reaching the parent's edges. Dividers within a line are centered in a
+// childGap, dividers between lines in a wrapLineGap.
 void Clay__WrapEmitDividers(Clay_Context *context, Clay_LayoutElement *currentElement, Clay_BoundingBox currentElementBoundingBox, Clay_Vector2 scrollOffset) {
     Clay_LayoutConfig *layoutConfig = &currentElement->config.layout;
     Clay_BorderElementConfig *borderConfig = &currentElement->config.border;
     bool rows = layoutConfig->layoutDirection == CLAY_LEFT_TO_RIGHT;
-    float halfGap = layoutConfig->childGap / 2;
+    float halfChildGap = layoutConfig->childGap / 2;
+    float halfLineGap = layoutConfig->wrapLineGap / 2;
     float halfWidth = borderConfig->width.betweenChildren / 2;
     float crossSize = Clay__WrapAxisSize(currentElement, !rows);
     float crossCursor = rows ? (float)layoutConfig->padding.top : (float)layoutConfig->padding.left;
@@ -565,10 +567,10 @@ void Clay__WrapEmitDividers(Clay_Context *context, Clay_LayoutElement *currentEl
     for (int32_t lineIndex = 0; lineIndex < lineCount; lineIndex++) {
         Clay__WrapLine *line = Clay__WrapLineArraySlice_Get(&currentElement->wrapLines, lineIndex);
         float advance = Clay__WrapLineAdvance(context, currentElement, line, rows);
-        float bandStart = lineIndex == 0 ? 0 : crossCursor - halfGap;
+        float bandStart = lineIndex == 0 ? 0 : crossCursor - halfLineGap;
         float bandEnd = crossSize;
         if (lineIndex < lineCount - 1) {
-            bandEnd = crossCursor + advance + halfGap;
+            bandEnd = crossCursor + advance + halfLineGap;
         } else if (lineIndex > 0) {
             // Rigid children can push later lines past the parent's edge; the
             // band then ends at the line's own end so a divider never gets a
@@ -578,9 +580,9 @@ void Clay__WrapEmitDividers(Clay_Context *context, Clay_LayoutElement *currentEl
         if (lineIndex > 0) {
             Clay_BoundingBox dividerBox;
             if (rows) {
-                dividerBox = CLAY__INIT(Clay_BoundingBox) { currentElementBoundingBox.x + scrollOffset.x, currentElementBoundingBox.y + (crossCursor - halfGap) + scrollOffset.y - halfWidth, currentElement->dimensions.width, (float)borderConfig->width.betweenChildren };
+                dividerBox = CLAY__INIT(Clay_BoundingBox) { currentElementBoundingBox.x + scrollOffset.x, currentElementBoundingBox.y + (crossCursor - halfLineGap) + scrollOffset.y - halfWidth, currentElement->dimensions.width, (float)borderConfig->width.betweenChildren };
             } else {
-                dividerBox = CLAY__INIT(Clay_BoundingBox) { currentElementBoundingBox.x + (crossCursor - halfGap) + scrollOffset.x - halfWidth, currentElementBoundingBox.y + scrollOffset.y, (float)borderConfig->width.betweenChildren, currentElement->dimensions.height };
+                dividerBox = CLAY__INIT(Clay_BoundingBox) { currentElementBoundingBox.x + (crossCursor - halfLineGap) + scrollOffset.x - halfWidth, currentElementBoundingBox.y + scrollOffset.y, (float)borderConfig->width.betweenChildren, currentElement->dimensions.height };
             }
             Clay__AddRenderCommand(CLAY__INIT(Clay_RenderCommand) {
                 .boundingBox = dividerBox,
@@ -590,7 +592,7 @@ void Clay__WrapEmitDividers(Clay_Context *context, Clay_LayoutElement *currentEl
                 .commandType = CLAY_RENDER_COMMAND_TYPE_RECTANGLE,
             });
         }
-        float alongOffset = (rows ? (float)layoutConfig->padding.left : (float)layoutConfig->padding.top) - halfGap;
+        float alongOffset = (rows ? (float)layoutConfig->padding.left : (float)layoutConfig->padding.top) - halfChildGap;
         for (int32_t childOffset = line->start; childOffset < line->start + line->count; childOffset++) {
             Clay_LayoutElement *childElement = Clay_LayoutElementArray_Get(&context->layoutElements, currentElement->children.elements[childOffset]);
             if (childOffset > line->start) {
@@ -610,6 +612,6 @@ void Clay__WrapEmitDividers(Clay_Context *context, Clay_LayoutElement *currentEl
             }
             alongOffset += Clay__WrapAxisSize(childElement, rows) + (float)layoutConfig->childGap;
         }
-        crossCursor += advance + (float)layoutConfig->childGap;
+        crossCursor += advance + (float)layoutConfig->wrapLineGap;
     }
 }

@@ -12,13 +12,21 @@ type LayoutConfig struct {
 	// new line: rows stacked top to bottom for LeftToRight, columns stacked
 	// left to right for TopToBottom. Lines break greedily at the sizes
 	// children have before Grow distributes space; each line then shares its
-	// own slack, ChildGap separates lines as well as children, and
-	// ChildAlignment places lines and their children the way it places a
-	// single row. A parent whose children fit on one line lays out exactly as
-	// it would with WrapChildren off.
+	// own slack, ChildGap separates the children within a line and
+	// WrapLineGap separates the lines, and ChildAlignment places lines and
+	// their children the way it places a single row. A parent whose children
+	// fit on one line lays out exactly as it would with WrapChildren off.
 	//
 	// claygo extension; upstream Clay has no child wrapping.
 	WrapChildren bool
+	// WrapLineGap is the gap in pixels between the lines of a WrapChildren
+	// parent, across the layout axis: vertical for LeftToRight, horizontal
+	// for TopToBottom. It is independent of ChildGap, which stays the gap
+	// along the axis between the children of one line; zero leaves the lines
+	// touching. Ignored unless WrapChildren is set.
+	//
+	// claygo extension; upstream Clay has no child wrapping.
+	WrapLineGap uint16
 }
 
 // TextElementConfig controls text measurement, wrapping, alignment, and render

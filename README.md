@@ -287,8 +287,9 @@ fit on the layout axis start a new line, rows stacked top to bottom for
 claygo.Box(ctx, claygo.Decl{
     Layout: claygo.LayoutConfig{
         Sizing:       claygo.Sizing{Width: claygo.SizingGrow(), Height: claygo.SizingFit()},
-        ChildGap:     8,
+        ChildGap:     8,    // between chips on a row
         WrapChildren: true, // as many chips per row as fit, then a new row
+        WrapLineGap:  12,   // between the rows
     },
 }, func() {
     for _, label := range labels {
@@ -299,12 +300,14 @@ claygo.Box(ctx, claygo.Decl{
 
 Lines break greedily, in declaration order, at the sizes children have before
 `Grow` distributes space; `Grow` children then share their own line's slack.
-`ChildGap` separates lines as well as children, `ChildAlignment` places each
-line's content on the layout axis and each child within its line on the cross
-axis, between-children borders draw within and between lines, and a clipping
-wrap parent reports the stacked lines as its scroll content. A wrapping parent
-whose children fit on one line lays out **exactly** as it would without the
-flag (the test suite runs the entire upstream corpus with the flag forced on).
+`ChildGap` separates the children within a line and `WrapLineGap` separates
+the lines, so the two directions are set independently; `ChildAlignment`
+places each line's content on the layout axis and each child within its line
+on the cross axis, between-children borders draw within and between lines,
+and a clipping wrap parent reports the stacked lines as its scroll content.
+A wrapping parent whose children fit on one line lays out **exactly** as it
+would without the flag (the test suite runs the entire upstream corpus with
+the flag forced on).
 Column wrap needs child heights before it can break, so a frame that contains
 one runs the sizing sweep twice; frames without pay nothing. Full semantics:
 `docs/child-wrap-spec.md`.

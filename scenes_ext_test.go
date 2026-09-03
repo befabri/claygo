@@ -33,6 +33,11 @@ var extensionScenes = map[string]func(*Context) RenderCommandArray{
 	"ext_wrap_clip_shrink":             sceneExtWrapClipShrink,
 	"ext_wrap_rows_short_parent":       sceneExtWrapRowsShortParent,
 	"ext_wrap_cols_clip_grow":          sceneExtWrapColsClipGrow,
+	"ext_wrap_rows_line_gap":           sceneExtWrapRowsLineGap,
+	"ext_wrap_rows_line_gap_slack":     sceneExtWrapRowsLineGapSlack,
+	"ext_wrap_rows_line_gap_borders":   sceneExtWrapRowsLineGapBorders,
+	"ext_wrap_cols_line_gap":           sceneExtWrapColsLineGap,
+	"ext_wrap_rows_line_gap_scroll":    sceneExtWrapRowsLineGapScroll,
 }
 
 // extensionScenePrefix separates extension scenes from the upstream corpus in
@@ -101,6 +106,7 @@ func extStripDecl(width float32, gap uint16) Decl {
 			Padding:      PaddingAll(8),
 			ChildGap:     gap,
 			WrapChildren: true,
+			WrapLineGap:  gap,
 		},
 		BackgroundColor: RGBA(30, 30, 36, 255),
 	}
@@ -133,6 +139,7 @@ func sceneExtWrapRowsSingleLine(c *Context) RenderCommandArray {
 						ChildGap:       8,
 						ChildAlignment: ChildAlignment{X: AlignXCenter, Y: AlignYCenter},
 						WrapChildren:   strip == 0,
+						WrapLineGap:    8,
 					},
 					BackgroundColor: RGBA(30, 30, 36, 255),
 				}, func() {
@@ -172,6 +179,7 @@ func sceneExtWrapRowsPercent(c *Context) RenderCommandArray {
 				Padding:      PaddingAll(10),
 				ChildGap:     10,
 				WrapChildren: true,
+				WrapLineGap:  10,
 			},
 			BackgroundColor: RGBA(30, 30, 36, 255),
 		}, func() {
@@ -193,6 +201,7 @@ func sceneExtWrapRowsAligned(c *Context, alignment ChildAlignment) RenderCommand
 				ChildGap:       6,
 				ChildAlignment: alignment,
 				WrapChildren:   true,
+				WrapLineGap:    6,
 			},
 			BackgroundColor: RGBA(30, 30, 36, 255),
 		}, func() {
@@ -255,6 +264,7 @@ func sceneExtWrapRowsTextChildren(c *Context) RenderCommandArray {
 				ChildGap:       8,
 				ChildAlignment: ChildAlignment{X: AlignXLeft, Y: AlignYCenter},
 				WrapChildren:   true,
+				WrapLineGap:    8,
 			},
 			BackgroundColor: RGBA(30, 30, 36, 255),
 		}, func() {
@@ -295,6 +305,7 @@ func sceneExtWrapRowsFitInGrow(c *Context) RenderCommandArray {
 					Padding:      PaddingAll(6),
 					ChildGap:     6,
 					WrapChildren: true,
+					WrapLineGap:  6,
 				},
 				BackgroundColor: RGBA(80, 80, 120, 255),
 			}, func() {
@@ -314,6 +325,7 @@ func sceneExtWrapRowsClipScroll(c *Context) RenderCommandArray {
 				Padding:      PaddingAll(8),
 				ChildGap:     8,
 				WrapChildren: true,
+				WrapLineGap:  8,
 			},
 			BackgroundColor: RGBA(30, 30, 36, 255),
 			Clip:            ClipElementConfig{Horizontal: true, Vertical: true, ChildOffset: Vector2{X: 0, Y: -30}},
@@ -336,6 +348,7 @@ func sceneExtWrapRowsNested(c *Context) RenderCommandArray {
 					Padding:      PaddingAll(4),
 					ChildGap:     4,
 					WrapChildren: true,
+					WrapLineGap:  4,
 				},
 				BackgroundColor: RGBA(80, 80, 120, 255),
 			}, func() {
@@ -393,6 +406,7 @@ func sceneExtWrapColsFixedHeight(c *Context) RenderCommandArray {
 				ChildGap:        8,
 				LayoutDirection: TopToBottom,
 				WrapChildren:    true,
+				WrapLineGap:     8,
 			},
 			BackgroundColor: RGBA(30, 30, 36, 255),
 		}, func() {
@@ -412,6 +426,7 @@ func sceneExtWrapColsGrowHeight(c *Context) RenderCommandArray {
 				ChildGap:        8,
 				LayoutDirection: TopToBottom,
 				WrapChildren:    true,
+				WrapLineGap:     8,
 			},
 			BackgroundColor: RGBA(30, 30, 36, 255),
 		}, func() {
@@ -456,6 +471,7 @@ func sceneExtWrapClipShrink(c *Context) RenderCommandArray {
 						Padding:      PaddingAll(8),
 						ChildGap:     8,
 						WrapChildren: true,
+						WrapLineGap:  8,
 					},
 					BackgroundColor: RGBA(80, 80, 120, 255),
 					Clip:            ClipElementConfig{Horizontal: true, Vertical: true},
@@ -485,6 +501,7 @@ func sceneExtWrapClipShrink(c *Context) RenderCommandArray {
 						ChildGap:        8,
 						LayoutDirection: TopToBottom,
 						WrapChildren:    true,
+						WrapLineGap:     8,
 					},
 					BackgroundColor: RGBA(80, 80, 120, 255),
 					Clip:            ClipElementConfig{Horizontal: true, Vertical: true},
@@ -509,6 +526,7 @@ func sceneExtWrapRowsShortParent(c *Context) RenderCommandArray {
 				Sizing:       Sizing{Width: SizingFixed(120), Height: SizingFixed(40)},
 				ChildGap:     10,
 				WrapChildren: true,
+				WrapLineGap:  10,
 			},
 			BackgroundColor: RGBA(30, 30, 36, 255),
 			Border:          BorderElementConfig{Color: RGBA(240, 200, 80, 255), Width: BorderWidth{BetweenChildren: 2}},
@@ -531,6 +549,7 @@ func sceneExtWrapColsClipGrow(c *Context) RenderCommandArray {
 						ChildGap:        8,
 						LayoutDirection: TopToBottom,
 						WrapChildren:    true,
+						WrapLineGap:     8,
 					},
 					BackgroundColor: RGBA(30, 30, 36, 255),
 					Clip:            ClipElementConfig{Horizontal: pane == 1, Vertical: pane == 1},
@@ -542,6 +561,114 @@ func sceneExtWrapColsClipGrow(c *Context) RenderCommandArray {
 						}, nil)
 					}
 				})
+			}
+		})
+	})
+}
+
+func sceneExtWrapRowsLineGap(c *Context) RenderCommandArray {
+	lineGaps := [2]uint16{24, 0}
+	return singleFrame(c, func() {
+		Box(c, Decl{Layout: LayoutConfig{Sizing: Sizing{Width: SizingFit(), Height: SizingFit()}, ChildGap: 16, LayoutDirection: TopToBottom}}, func() {
+			for strip := range 2 {
+				Box(c, Decl{
+					Layout: LayoutConfig{
+						Sizing:       Sizing{Width: SizingFixed(300), Height: SizingFit()},
+						Padding:      PaddingAll(8),
+						ChildGap:     8,
+						WrapChildren: true,
+						WrapLineGap:  lineGaps[strip],
+					},
+					BackgroundColor: RGBA(30, 30, 36, 255),
+				}, func() {
+					for i := range 7 {
+						extChip(c, i, 85, 30)
+					}
+				})
+			}
+		})
+	})
+}
+
+func sceneExtWrapRowsLineGapSlack(c *Context) RenderCommandArray {
+	return singleFrame(c, func() {
+		Box(c, Decl{
+			Layout: LayoutConfig{
+				Sizing:         Sizing{Width: SizingFixed(300), Height: SizingFixed(220)},
+				Padding:        PaddingAll(8),
+				ChildGap:       8,
+				ChildAlignment: ChildAlignment{X: AlignXCenter, Y: AlignYCenter},
+				WrapChildren:   true,
+				WrapLineGap:    20,
+			},
+			BackgroundColor: RGBA(30, 30, 36, 255),
+		}, func() {
+			extChip(c, 0, 90, 20)
+			extChip(c, 1, 120, 30)
+			extChip(c, 2, 60, 24)
+			extChip(c, 3, 100, 20)
+			extChip(c, 4, 80, 40)
+			extChip(c, 5, 110, 28)
+		})
+	})
+}
+
+func sceneExtWrapRowsLineGapBorders(c *Context) RenderCommandArray {
+	return singleFrame(c, func() {
+		Box(c, Decl{
+			Layout: LayoutConfig{
+				Sizing:       Sizing{Width: SizingFixed(300), Height: SizingFit()},
+				Padding:      PaddingAll(8),
+				ChildGap:     7,
+				WrapChildren: true,
+				WrapLineGap:  13,
+			},
+			BackgroundColor: RGBA(30, 30, 36, 255),
+			Border:          BorderElementConfig{Color: RGBA(240, 200, 80, 255), Width: BorderWidth{BetweenChildren: 2}},
+		}, func() {
+			for i := range 7 {
+				extChip(c, i, 80, 30)
+			}
+		})
+	})
+}
+
+func sceneExtWrapColsLineGap(c *Context) RenderCommandArray {
+	widths := [7]float32{60, 70, 50, 80, 55, 65, 45}
+	return singleFrame(c, func() {
+		Box(c, Decl{
+			Layout: LayoutConfig{
+				Sizing:          Sizing{Width: SizingFixed(320), Height: SizingFixed(200)},
+				Padding:         PaddingAll(8),
+				ChildGap:        6,
+				LayoutDirection: TopToBottom,
+				WrapChildren:    true,
+				WrapLineGap:     20,
+			},
+			BackgroundColor: RGBA(30, 30, 36, 255),
+		}, func() {
+			for i := range 7 {
+				extChip(c, i, widths[i], 50)
+			}
+		})
+	})
+}
+
+func sceneExtWrapRowsLineGapScroll(c *Context) RenderCommandArray {
+	return singleFrame(c, func() {
+		Box(c, Decl{
+			Layout: LayoutConfig{
+				Sizing:       Sizing{Width: SizingFixed(300), Height: SizingFixed(80)},
+				Padding:      PaddingAll(8),
+				ChildGap:     8,
+				WrapChildren: true,
+				WrapLineGap:  22,
+			},
+			BackgroundColor: RGBA(30, 30, 36, 255),
+			Clip:            ClipElementConfig{Horizontal: true, Vertical: true, ChildOffset: Vector2{X: 0, Y: -30}},
+		}, func() {
+			for i := range 9 {
+				extChip(c, i, 80, 30)
 			}
 		})
 	})

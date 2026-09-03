@@ -9,17 +9,25 @@ import (
 // Go-only tests for child wrapping. The ext_* goldens in scenes_ext_test.go
 // pin C/Go agreement; these pin the semantics by hand-computed numbers.
 
-// wrapStrip declares a LeftToRight wrapping strip with padding 8, the value
-// every hand-computed inner width in this file assumes.
-func wrapStrip(c *Context, id string, width float32, gap uint16, children func()) {
+// wrapStripGaps declares a LeftToRight wrapping strip with padding 8, the
+// value every hand-computed inner width in this file assumes, and the two
+// gaps set apart: gap between the children of a line, lineGap between lines.
+func wrapStripGaps(c *Context, id string, width float32, gap, lineGap uint16, children func()) {
 	BoxID(c, id, Decl{
 		Layout: LayoutConfig{
 			Sizing:       Sizing{Width: SizingFixed(width), Height: SizingFit()},
 			Padding:      PaddingAll(8),
 			ChildGap:     gap,
 			WrapChildren: true,
+			WrapLineGap:  lineGap,
 		},
 	}, children)
+}
+
+// wrapStrip is wrapStripGaps with one value for both gaps, the shape the
+// hand-computed numbers below assume unless they say otherwise.
+func wrapStrip(c *Context, id string, width float32, gap uint16, children func()) {
+	wrapStripGaps(c, id, width, gap, gap, children)
 }
 
 func fixedChip(c *Context, id string, i int, w, h float32) {
@@ -165,14 +173,14 @@ func TestWrapCrossSizing(t *testing.T) {
 	// strip's own minimum (widest chip plus padding) is what lets that happen.
 	BoxID(ctx, "Column", Decl{Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(300), Height: SizingFit()}, LayoutDirection: TopToBottom, ChildGap: 4}}, func() {
 		BoxID(ctx, "Fit", Decl{Layout: LayoutConfig{
-			Sizing: Sizing{Width: SizingFit(), Height: SizingFit()}, Padding: PaddingAll(8), ChildGap: 8, WrapChildren: true,
+			Sizing: Sizing{Width: SizingFit(), Height: SizingFit()}, Padding: PaddingAll(8), ChildGap: 8, WrapChildren: true, WrapLineGap: 8,
 		}}, func() { // inner 284: [100,100] [100,100] [100]
 			for i := range 5 {
 				fixedChip(ctx, "Chip", i, 100, 10+float32(i)*10) // heights 10..50
 			}
 		})
 		BoxID(ctx, "Fixed", Decl{
-			Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(300), Height: SizingFixed(500)}, Padding: PaddingAll(8), ChildGap: 8, WrapChildren: true},
+			Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(300), Height: SizingFixed(500)}, Padding: PaddingAll(8), ChildGap: 8, WrapChildren: true, WrapLineGap: 8},
 		}, func() {
 			for i := range 5 {
 				fixedChip(ctx, "Other", i, 100, 20)
@@ -218,6 +226,7 @@ func TestWrapAlignment(t *testing.T) {
 				ChildGap:       10,
 				ChildAlignment: ChildAlignment{X: ax, Y: ay},
 				WrapChildren:   true,
+				WrapLineGap:    10,
 			}}, func() {
 				fixedChip(ctx, "Chip", 0, 100, 20)
 				fixedChip(ctx, "Chip", 1, 100, 40)
@@ -250,7 +259,7 @@ func TestWrapDividers(t *testing.T) {
 	ctx := freshContext(t)
 	ctx.BeginLayout()
 	BoxID(ctx, "Strip", Decl{
-		Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(300), Height: SizingFit()}, Padding: PaddingAll(8), ChildGap: 10, WrapChildren: true},
+		Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(300), Height: SizingFit()}, Padding: PaddingAll(8), ChildGap: 10, WrapChildren: true, WrapLineGap: 10},
 		Border: BorderElementConfig{Color: RGBA(240, 200, 80, 255), Width: BorderWidth{BetweenChildren: 2}},
 	}, func() {
 		for i := range 7 { // inner 284: three per line, lines of height 30 at y 8, 48, 88
@@ -310,7 +319,7 @@ func TestWrapScrollContentSize(t *testing.T) {
 	ctx := freshContext(t)
 	ctx.BeginLayout()
 	BoxID(ctx, "Pane", Decl{
-		Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(300), Height: SizingFixed(80)}, Padding: PaddingAll(8), ChildGap: 8, WrapChildren: true},
+		Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(300), Height: SizingFixed(80)}, Padding: PaddingAll(8), ChildGap: 8, WrapChildren: true, WrapLineGap: 8},
 		Clip:   ClipElementConfig{Horizontal: true, Vertical: true},
 	}, func() {
 		for i := range 9 { // inner 284: three per line, 3 lines of 30
@@ -474,7 +483,7 @@ func TestWrapLayoutIsAllocationFree(t *testing.T) {
 			}
 		})
 		BoxID(ctx, "Cols", Decl{Layout: LayoutConfig{
-			Sizing: Sizing{Width: SizingFit(), Height: SizingFixed(120)}, Padding: PaddingAll(8), ChildGap: 8, LayoutDirection: TopToBottom, WrapChildren: true,
+			Sizing: Sizing{Width: SizingFit(), Height: SizingFixed(120)}, Padding: PaddingAll(8), ChildGap: 8, LayoutDirection: TopToBottom, WrapChildren: true, WrapLineGap: 8,
 		}}, func() {
 			for i := range 12 {
 				fixedChip(ctx, "Cell", i, 40, 30)
@@ -497,7 +506,7 @@ func TestWrapColumnSecondSweep(t *testing.T) {
 	ctx := freshContext(t)
 	ctx.BeginLayout()
 	BoxID(ctx, "Cols", Decl{Layout: LayoutConfig{
-		Sizing: Sizing{Width: SizingFixed(400), Height: SizingFixed(100)}, Padding: PaddingAll(8), ChildGap: 8, LayoutDirection: TopToBottom, WrapChildren: true,
+		Sizing: Sizing{Width: SizingFixed(400), Height: SizingFixed(100)}, Padding: PaddingAll(8), ChildGap: 8, LayoutDirection: TopToBottom, WrapChildren: true, WrapLineGap: 8,
 	}}, func() {
 		for i := range 4 { // inner height 84: two 30-tall cells per column
 			BoxIDOffset(ctx, "Cell", uint32(i), Decl{Layout: LayoutConfig{Sizing: Sizing{Width: SizingGrow(), Height: SizingFixed(30)}}}, nil)
@@ -561,7 +570,7 @@ func TestWrapClipParentKeepsPaddingMinimum(t *testing.T) {
 		Sizing: Sizing{Width: SizingFixed(300), Height: SizingFixed(120)}, Padding: PaddingAll(8), ChildGap: 8, LayoutDirection: TopToBottom,
 	}}, func() {
 		BoxID(ctx, "Pane", Decl{
-			Layout: LayoutConfig{Sizing: Sizing{Width: SizingGrow(0), Height: SizingFit()}, Padding: PaddingAll(8), ChildGap: 8, WrapChildren: true},
+			Layout: LayoutConfig{Sizing: Sizing{Width: SizingGrow(0), Height: SizingFit()}, Padding: PaddingAll(8), ChildGap: 8, WrapChildren: true, WrapLineGap: 8},
 			Clip:   ClipElementConfig{Horizontal: true, Vertical: true},
 		}, func() {
 			for i := range 9 { // three lines of 30: 122 tall unclipped
@@ -574,7 +583,7 @@ func TestWrapClipParentKeepsPaddingMinimum(t *testing.T) {
 		Sizing: Sizing{Width: SizingFixed(200), Height: SizingFixed(150)}, Padding: PaddingAll(8), ChildGap: 8,
 	}}, func() {
 		BoxID(ctx, "Cols", Decl{
-			Layout: LayoutConfig{Sizing: Sizing{Width: SizingFit(), Height: SizingGrow(0)}, Padding: PaddingAll(8), ChildGap: 8, LayoutDirection: TopToBottom, WrapChildren: true},
+			Layout: LayoutConfig{Sizing: Sizing{Width: SizingFit(), Height: SizingGrow(0)}, Padding: PaddingAll(8), ChildGap: 8, LayoutDirection: TopToBottom, WrapChildren: true, WrapLineGap: 8},
 			Clip:   ClipElementConfig{Horizontal: true, Vertical: true},
 		}, func() {
 			for i := range 8 { // two 40-tall cells per column: four columns, 280 wide
@@ -608,7 +617,7 @@ func TestWrapClipParentKeepsPaddingMinimum(t *testing.T) {
 func TestWrapLinesNeverOverlapRigidChildren(t *testing.T) {
 	ctx := freshContext(t)
 	ctx.BeginLayout()
-	BoxID(ctx, "Strip", Decl{Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(120), Height: SizingFixed(40)}, ChildGap: 10, WrapChildren: true}}, func() {
+	BoxID(ctx, "Strip", Decl{Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(120), Height: SizingFixed(40)}, ChildGap: 10, WrapChildren: true, WrapLineGap: 10}}, func() {
 		for i := range 3 {
 			fixedChip(ctx, "Chip", i, 50, 30)
 		}
@@ -691,7 +700,7 @@ func TestWrapColumnClipDoesNotChangeGrowSizing(t *testing.T) {
 		ctx := freshContext(t)
 		ctx.BeginLayout()
 		BoxID(ctx, "Cols", Decl{
-			Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(400), Height: SizingFixed(100)}, Padding: PaddingAll(8), ChildGap: 8, LayoutDirection: TopToBottom, WrapChildren: true},
+			Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(400), Height: SizingFixed(100)}, Padding: PaddingAll(8), ChildGap: 8, LayoutDirection: TopToBottom, WrapChildren: true, WrapLineGap: 8},
 			Clip:   ClipElementConfig{Horizontal: clip, Vertical: clip},
 		}, func() {
 			for i := range 4 { // 84 px inner height: two 30-tall cells per column
@@ -719,7 +728,7 @@ func TestWrapDividersNeverNegative(t *testing.T) {
 	ctx := freshContext(t)
 	ctx.BeginLayout()
 	BoxID(ctx, "Strip", Decl{
-		Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(120), Height: SizingFixed(40)}, ChildGap: 10, WrapChildren: true},
+		Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(120), Height: SizingFixed(40)}, ChildGap: 10, WrapChildren: true, WrapLineGap: 10},
 		Border: BorderElementConfig{Color: RGBA(240, 200, 80, 255), Width: BorderWidth{BetweenChildren: 2}},
 	}, func() {
 		for i := range 6 { // three lines of two 50x30 chips at y 0, 40, 80
@@ -746,5 +755,125 @@ func TestWrapDividersNeverNegative(t *testing.T) {
 		if d.Y != want[i][0] || d.Y+d.Height != want[i][1] {
 			t.Errorf("divider %d spans [%v, %v], want %v", i, d.Y, d.Y+d.Height, want[i])
 		}
+	}
+}
+
+// TestWrapLineGapIsIndependentOfChildGap: ChildGap spaces the children along
+// a line and WrapLineGap spaces the lines, with neither reading the other.
+// Seven 85 px chips in inner 284 take three per line (3*85 + 2*8 = 271), so
+// the chips step 93 across while the lines step 54 down.
+func TestWrapLineGapIsIndependentOfChildGap(t *testing.T) {
+	ctx := freshContext(t)
+	ctx.BeginLayout()
+	wrapStripGaps(ctx, "Strip", 300, 8, 24, func() {
+		for i := range 7 {
+			fixedChip(ctx, "Chip", i, 85, 30)
+		}
+	})
+	ctx.EndLayout(0)
+	if got := wrapLinesOf(t, ctx, "Strip"); !reflect.DeepEqual(got, [][2]int32{{0, 3}, {3, 3}, {6, 1}}) {
+		t.Fatalf("lines = %v, want [[0 3] [3 3] [6 1]]", got)
+	}
+	for i, want := range []float32{8, 101, 194} {
+		if x := bboxOf(t, ctx, "Chip", uint32(i)).X; x != want {
+			t.Errorf("chip %d x = %v, want %v (ChildGap 8, untouched by the line gap)", i, x, want)
+		}
+	}
+	for line, want := range []float32{8, 62, 116} {
+		if y := bboxOf(t, ctx, "Chip", uint32(line*3)).Y; y != want {
+			t.Errorf("line %d y = %v, want %v (WrapLineGap 24)", line, y, want)
+		}
+	}
+	if h := bboxOfName(t, ctx, "Strip").Height; h != 154 {
+		t.Errorf("fit height = %v, want 154 (16 + 3*30 + 2*24)", h)
+	}
+}
+
+// TestWrapLineGapZero stacks the lines flush while the children on a line
+// stay apart, the combination one gap value could never express.
+func TestWrapLineGapZero(t *testing.T) {
+	ctx := freshContext(t)
+	ctx.BeginLayout()
+	wrapStripGaps(ctx, "Strip", 300, 8, 0, func() {
+		for i := range 7 {
+			fixedChip(ctx, "Chip", i, 85, 30)
+		}
+	})
+	ctx.EndLayout(0)
+	if x := bboxOf(t, ctx, "Chip", 1).X; x != 101 {
+		t.Errorf("chip 1 x = %v, want 101 (ChildGap 8 survives a zero line gap)", x)
+	}
+	if y := bboxOf(t, ctx, "Chip", 3).Y; y != 38 {
+		t.Errorf("second line y = %v, want 38 (lines touch)", y)
+	}
+	if h := bboxOfName(t, ctx, "Strip").Height; h != 106 {
+		t.Errorf("fit height = %v, want 106 (16 + 3*30, no line gaps)", h)
+	}
+}
+
+// TestWrapDividerGapsHalveSeparately: with both gaps odd and different, the
+// within-line dividers are centered in ChildGap/2 = 3 and the between-line
+// ones in WrapLineGap/2 = 6. Halving the wrong field moves every divider, so
+// this pins the two integer halvings apart. Seven 80 px chips in inner 284
+// pack three per line.
+func TestWrapDividerGapsHalveSeparately(t *testing.T) {
+	ctx := freshContext(t)
+	ctx.BeginLayout()
+	BoxID(ctx, "Strip", Decl{
+		Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(300), Height: SizingFit()}, Padding: PaddingAll(8), ChildGap: 7, WrapChildren: true, WrapLineGap: 13},
+		Border: BorderElementConfig{Color: RGBA(240, 200, 80, 255), Width: BorderWidth{BetweenChildren: 2}},
+	}, func() {
+		for i := range 7 {
+			fixedChip(ctx, "Chip", i, 80, 30)
+		}
+	})
+	cmds := ctx.EndLayout(0)
+	var withinX, betweenY []float32
+	for _, cmd := range cmds.Commands {
+		if cmd.CommandType != RenderCommandTypeRectangle || cmd.RenderData.Rectangle.BackgroundColor != RGBA(240, 200, 80, 255) {
+			continue
+		}
+		if cmd.BoundingBox.Width == 2 {
+			withinX = append(withinX, cmd.BoundingBox.X)
+		} else {
+			betweenY = append(betweenY, cmd.BoundingBox.Y)
+		}
+	}
+	// The along cursor starts at padding 8 - ChildGap/2 = 5 and steps 80 + 7;
+	// each divider sits half a border width back from it.
+	if want := []float32{91, 178, 91, 178}; !reflect.DeepEqual(withinX, want) {
+		t.Errorf("within-line divider x = %v, want %v (ChildGap 7 halves to 3)", withinX, want)
+	}
+	// The cross cursor steps 30 + 13; each divider sits half a WrapLineGap
+	// and half a border width back: 8 + 30 + 13 - 6 - 1, then + 43.
+	if want := []float32{44, 87}; !reflect.DeepEqual(betweenY, want) {
+		t.Errorf("between-line divider y = %v, want %v (WrapLineGap 13 halves to 6)", betweenY, want)
+	}
+}
+
+// TestWrapScrollContentSizeUsesLineGap: a clipping wrap pane stacks its
+// scroll content on WrapLineGap, mirroring ext_wrap_rows_line_gap_scroll.
+func TestWrapScrollContentSizeUsesLineGap(t *testing.T) {
+	ctx := freshContext(t)
+	ctx.BeginLayout()
+	BoxID(ctx, "Pane", Decl{
+		Layout: LayoutConfig{Sizing: Sizing{Width: SizingFixed(300), Height: SizingFixed(80)}, Padding: PaddingAll(8), ChildGap: 8, WrapChildren: true, WrapLineGap: 22},
+		Clip:   ClipElementConfig{Horizontal: true, Vertical: true},
+	}, func() {
+		for i := range 9 { // inner 284: three per line, 3 lines of 30
+			fixedChip(ctx, "Chip", i, 80, 30)
+		}
+	})
+	ctx.EndLayout(0)
+	data := ctx.GetScrollContainerData(GetElementID("Pane"))
+	if !data.Found {
+		t.Fatal("scroll container not found")
+	}
+	want := Dimensions{Width: 3*80 + 2*8 + 16, Height: 3*30 + 2*22 + 16}
+	if data.ContentDimensions != want {
+		t.Errorf("content size = %+v, want %+v (lines stacked on WrapLineGap 22)", data.ContentDimensions, want)
+	}
+	if y := bboxOf(t, ctx, "Chip", 8).Y; y != 112 {
+		t.Errorf("last line y = %v, want 112 (8 + 2*(30+22))", y)
 	}
 }

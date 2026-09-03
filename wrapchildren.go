@@ -202,12 +202,12 @@ func (c *Context) updateWrapCrossContent(parent *LayoutElement, crossXAxis bool,
 		content += naturalWithExiting
 		minContent += naturalMin
 	}
-	gaps := float32(max(parent.WrapLines.Length-1, 0)) * float32(layoutCfg.ChildGap)
-	content += gaps
-	minContent += gaps
 	if !publish {
 		return
 	}
+	gaps := float32(max(parent.WrapLines.Length-1, 0)) * float32(layoutCfg.WrapLineGap)
+	content += gaps
+	minContent += gaps
 	// Each padding converts separately, matching upstream's height + top + bottom.
 	var sizing SizingAxis
 	var size, minSize *float32
@@ -251,7 +251,7 @@ func (c *Context) distributeWrapExtents(parent *LayoutElement, crossXAxis bool, 
 		lines[0].Extent = innerSize
 		return
 	}
-	stacked += float32(max(lineCount-1, 0)) * float32(layoutCfg.ChildGap)
+	stacked += float32(max(lineCount-1, 0)) * float32(layoutCfg.WrapLineGap)
 	sizeToDistribute := innerSize - stacked
 	if sizeToDistribute < 0 {
 		for sizeToDistribute < -epsilon && lineIndexBuffer.Length > 0 {
@@ -529,11 +529,11 @@ func (c *Context) positionWrapChildren(cur *LayoutElement, bbox BoundingBox, scr
 				alongCursor += wrapAxisSize(child, rows) + float32(layoutCfg.ChildGap)
 			}
 		}
-		crossCursor += max(line.Extent, lineCrossContent) + float32(layoutCfg.ChildGap)
+		crossCursor += max(line.Extent, lineCrossContent) + float32(layoutCfg.WrapLineGap)
 		alongContent = max(alongContent, lineContent)
 		crossContent += lineCrossContent
 	}
-	crossContent += float32(max(cur.WrapLines.Length-1, 0)) * float32(layoutCfg.ChildGap)
+	crossContent += float32(max(cur.WrapLines.Length-1, 0)) * float32(layoutCfg.WrapLineGap)
 	if scrollData != nil {
 		contentSize := Dimensions{Width: crossContent, Height: alongContent}
 		if rows {
@@ -559,7 +559,8 @@ func (c *Context) emitWrapDividers(cur *LayoutElement, upBBox BoundingBox, scrol
 	border := &cur.Config.Border
 	rows := layoutCfg.LayoutDirection == LeftToRight
 	// Integer halving, as upstream does on the uint16 fields.
-	halfGap := float32(layoutCfg.ChildGap / 2)
+	halfChildGap := float32(layoutCfg.ChildGap / 2)
+	halfLineGap := float32(layoutCfg.WrapLineGap / 2)
 	halfWidth := float32(border.Width.BetweenChildren / 2)
 	dividerWidth := float32(border.Width.BetweenChildren)
 	crossSize := wrapAxisSize(cur, !rows)
@@ -582,11 +583,11 @@ func (c *Context) emitWrapDividers(cur *LayoutElement, upBBox BoundingBox, scrol
 		advance := c.wrapLineAdvance(cur, line, rows)
 		var bandStart float32
 		if i > 0 {
-			bandStart = crossCursor - halfGap
+			bandStart = crossCursor - halfLineGap
 		}
 		bandEnd := crossSize
 		if i < lineCount-1 {
-			bandEnd = crossCursor + advance + halfGap
+			bandEnd = crossCursor + advance + halfLineGap
 		} else if i > 0 {
 			// Rigid children can push later lines past the parent's edge; the
 			// band then ends at the line's own end so a divider never gets a
@@ -596,9 +597,9 @@ func (c *Context) emitWrapDividers(cur *LayoutElement, upBBox BoundingBox, scrol
 		if i > 0 {
 			var box BoundingBox
 			if rows {
-				box = BoundingBox{X: upBBox.X + scrollOffset.X, Y: upBBox.Y + (crossCursor - halfGap) + scrollOffset.Y - halfWidth, Width: cur.Dimensions.Width, Height: dividerWidth}
+				box = BoundingBox{X: upBBox.X + scrollOffset.X, Y: upBBox.Y + (crossCursor - halfLineGap) + scrollOffset.Y - halfWidth, Width: cur.Dimensions.Width, Height: dividerWidth}
 			} else {
-				box = BoundingBox{X: upBBox.X + (crossCursor - halfGap) + scrollOffset.X - halfWidth, Y: upBBox.Y + scrollOffset.Y, Width: dividerWidth, Height: cur.Dimensions.Height}
+				box = BoundingBox{X: upBBox.X + (crossCursor - halfLineGap) + scrollOffset.X - halfWidth, Y: upBBox.Y + scrollOffset.Y, Width: dividerWidth, Height: cur.Dimensions.Height}
 			}
 			divider(box, HashNumber(uint32(2*int32(cur.Children.Length)+1+i), cur.ID).ID)
 		}
@@ -606,7 +607,7 @@ func (c *Context) emitWrapDividers(cur *LayoutElement, upBBox BoundingBox, scrol
 		if rows {
 			alongOffset = float32(layoutCfg.Padding.Left)
 		}
-		alongOffset -= halfGap
+		alongOffset -= halfChildGap
 		for offset := line.Start; offset < line.Start+line.Count; offset++ {
 			child := c.wrapChild(cur, offset)
 			if offset > line.Start {
@@ -620,6 +621,6 @@ func (c *Context) emitWrapDividers(cur *LayoutElement, upBBox BoundingBox, scrol
 			}
 			alongOffset += wrapAxisSize(child, rows) + float32(layoutCfg.ChildGap)
 		}
-		crossCursor += advance + float32(layoutCfg.ChildGap)
+		crossCursor += advance + float32(layoutCfg.WrapLineGap)
 	}
 }
