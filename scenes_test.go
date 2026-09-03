@@ -4,37 +4,38 @@ package claygo
 // scene compiled into oracle/main.c, and a corresponding
 // testdata/<name>.golden.json must exist.
 var goldenScenes = map[string]func(*Context){
-	"rect_solid":                  sceneRectSolid,
-	"padded_rect":                 scenePaddedRect,
-	"row_3_fixed":                 sceneRow3Fixed,
-	"row_3_grow":                  sceneRow3Grow,
-	"col_3_grow":                  sceneCol3Grow,
-	"mixed_fixed_grow":            sceneMixedFixedGrow,
-	"percent_half":                scenePercentHalf,
-	"min_max_clamp":               sceneMinMaxClamp,
-	"fit_to_children":             sceneFitToChildren,
-	"align_center":                sceneAlignCenter,
-	"align_right_bottom":          sceneAlignRightBottom,
-	"text_simple":                 sceneTextSimple,
-	"corner_radius":               sceneCornerRadius,
-	"border_basic":                sceneBorderBasic,
-	"border_between_children":     sceneBorderBetweenChildren,
-	"border_between_children_col": sceneBorderBetweenChildrenCol,
-	"overlay_color":               sceneOverlayColor,
-	"image_basic":                 sceneImageBasic,
-	"image_full_stack":            sceneImageFullStack,
-	"text_wrap_words":             sceneTextWrapWords,
-	"text_align_center":           sceneTextAlignCenter,
-	"text_align_right":            sceneTextAlignRight,
-	"aspect_ratio":                sceneAspectRatio,
-	"nested_3_levels":             sceneNested3Levels,
-	"clip_overflow":               sceneClipOverflow,
-	"clip_scroll_offset":          sceneClipScrollOffset,
-	"clip_text_wrap":              sceneClipTextWrap,
-	"floating_parent":             sceneFloatingParent,
-	"floating_z_sort":             sceneFloatingZSort,
-	"floating_in_clip":            sceneFloatingInClip,
-	"grow_7_nonint":               sceneGrow7NonInt,
+	"rect_solid":                      sceneRectSolid,
+	"padded_rect":                     scenePaddedRect,
+	"row_3_fixed":                     sceneRow3Fixed,
+	"row_3_grow":                      sceneRow3Grow,
+	"col_3_grow":                      sceneCol3Grow,
+	"mixed_fixed_grow":                sceneMixedFixedGrow,
+	"percent_half":                    scenePercentHalf,
+	"min_max_clamp":                   sceneMinMaxClamp,
+	"fit_to_children":                 sceneFitToChildren,
+	"align_center":                    sceneAlignCenter,
+	"align_right_bottom":              sceneAlignRightBottom,
+	"text_simple":                     sceneTextSimple,
+	"corner_radius":                   sceneCornerRadius,
+	"border_basic":                    sceneBorderBasic,
+	"border_between_children":         sceneBorderBetweenChildren,
+	"border_between_children_col":     sceneBorderBetweenChildrenCol,
+	"overlay_color":                   sceneOverlayColor,
+	"image_basic":                     sceneImageBasic,
+	"image_full_stack":                sceneImageFullStack,
+	"text_wrap_words":                 sceneTextWrapWords,
+	"text_align_center":               sceneTextAlignCenter,
+	"text_align_right":                sceneTextAlignRight,
+	"aspect_ratio":                    sceneAspectRatio,
+	"nested_3_levels":                 sceneNested3Levels,
+	"clip_overflow":                   sceneClipOverflow,
+	"clip_scroll_offset":              sceneClipScrollOffset,
+	"clip_text_wrap":                  sceneClipTextWrap,
+	"floating_parent":                 sceneFloatingParent,
+	"floating_z_sort":                 sceneFloatingZSort,
+	"floating_in_clip":                sceneFloatingInClip,
+	"grow_7_nonint":                   sceneGrow7NonInt,
+	"border_between_children_odd_gap": sceneBorderBetweenChildrenOddGap,
 }
 
 // A non-nil sentinel image pointer used by sceneImageBasic.
@@ -299,6 +300,38 @@ func sceneBorderBetweenChildren(c *Context) {
 		Border: BorderElementConfig{
 			Color: RGBA(240, 200, 80, 255),
 			Width: BorderWidth{BetweenChildren: 2},
+		},
+	}, func() {
+		Box(c, Decl{
+			Layout:          LayoutConfig{Sizing: Sizing{Width: SizingFixed(60), Height: SizingFixed(40)}},
+			BackgroundColor: RGBA(200, 80, 80, 255),
+		}, nil)
+		Box(c, Decl{
+			Layout:          LayoutConfig{Sizing: Sizing{Width: SizingFixed(60), Height: SizingFixed(40)}},
+			BackgroundColor: RGBA(80, 200, 80, 255),
+		}, nil)
+		Box(c, Decl{
+			Layout:          LayoutConfig{Sizing: Sizing{Width: SizingFixed(60), Height: SizingFixed(40)}},
+			BackgroundColor: RGBA(80, 80, 200, 255),
+		}, nil)
+	})
+}
+
+// sceneBorderBetweenChildrenOddGap is border_between_children with gap 7 and
+// divider width 3: upstream halves both with integer division (3 and 1), which
+// even values never exercise.
+func sceneBorderBetweenChildrenOddGap(c *Context) {
+	Box(c, Decl{
+		Layout: LayoutConfig{
+			Sizing:          Sizing{Width: SizingFit(0), Height: SizingFixed(60)},
+			Padding:         PaddingAll(8),
+			ChildGap:        7,
+			LayoutDirection: LeftToRight,
+		},
+		BackgroundColor: RGBA(30, 30, 36, 255),
+		Border: BorderElementConfig{
+			Color: RGBA(240, 200, 80, 255),
+			Width: BorderWidth{BetweenChildren: 3},
 		},
 	}, func() {
 		Box(c, Decl{

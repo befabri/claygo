@@ -975,6 +975,35 @@ static Clay_RenderCommandArray scene_exit_nested_child_plain(void) {
     return Clay_EndLayout(ORACLE_TRANSITION_DELTA);
 }
 
+// Odd childGap and betweenChildren width: upstream halves both with integer
+// division (`childGap / 2` on a uint16_t), so gap 7 → 3 and width 3 → 1. Pins
+// that truncation, which even gaps never exercise.
+static Clay_RenderCommandArray scene_border_between_children_odd_gap(void) {
+    Clay_BeginLayout();
+    CLAY_AUTO_ID({
+        .layout = {
+            .sizing = { CLAY_SIZING_FIT(0), CLAY_SIZING_FIXED(60) },
+            .padding = CLAY_PADDING_ALL(8),
+            .childGap = 7,
+            .layoutDirection = CLAY_LEFT_TO_RIGHT,
+        },
+        .backgroundColor = { 30, 30, 36, 255 },
+        .border = {
+            .color = { 240, 200, 80, 255 },
+            .width = { .betweenChildren = 3 },
+        },
+    }) {
+        CLAY_AUTO_ID({ .layout = { .sizing = { CLAY_SIZING_FIXED(60), CLAY_SIZING_FIXED(40) } },
+               .backgroundColor = { 200, 80, 80, 255 } });
+        CLAY_AUTO_ID({ .layout = { .sizing = { CLAY_SIZING_FIXED(60), CLAY_SIZING_FIXED(40) } },
+               .backgroundColor = { 80, 200, 80, 255 } });
+        CLAY_AUTO_ID({ .layout = { .sizing = { CLAY_SIZING_FIXED(60), CLAY_SIZING_FIXED(40) } },
+               .backgroundColor = { 80, 80, 200, 255 } });
+    }
+    return Clay_EndLayout(0.0f);
+}
+
+
 // ---------------------------------------------------------------------------
 // Scene dispatch
 // ---------------------------------------------------------------------------
@@ -1020,6 +1049,7 @@ static Scene SCENES[] = {
     { "exit_nested_child_plain",    scene_exit_nested_child_plain    },
     { "exit_single_mid",            scene_exit_single_mid            },
     { "exit_single_completed",      scene_exit_single_completed      },
+    { "border_between_children_odd_gap", scene_border_between_children_odd_gap },
 };
 static const int SCENE_COUNT = (int)(sizeof(SCENES) / sizeof(SCENES[0]));
 

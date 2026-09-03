@@ -291,8 +291,10 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 					// axis, advancing a cursor by (child.dim + childGap) and
 					// emitting a divider at each gap.
 					if cur.Config.Border.Width.BetweenChildren > 0 && cur.Config.Border.Color.A > 0 {
-						halfGap := float32(layoutCfg.ChildGap) / 2
-						halfW := float32(cur.Config.Border.Width.BetweenChildren) / 2
+						// Integer halving: upstream divides the uint16 fields
+						// before converting, so gap 7 gives 3, not 3.5.
+						halfGap := float32(layoutCfg.ChildGap / 2)
+						halfW := float32(cur.Config.Border.Width.BetweenChildren / 2)
 						borderOffset := Vector2{
 							X: float32(layoutCfg.Padding.Left) - halfGap,
 							Y: float32(layoutCfg.Padding.Top) - halfGap,
