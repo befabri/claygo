@@ -174,6 +174,10 @@ func (c *Context) propagateTextHeights() {
 			stack = stack[:len(stack)-1]
 
 			layoutCfg := &cur.Config.Layout
+			if layoutCfg.WrapChildren && layoutCfg.LayoutDirection == LeftToRight && cur.WrapLines.Length > 0 {
+				c.updateWrapCrossContent(cur, false, true)
+				continue
+			}
 			switch layoutCfg.LayoutDirection {
 			case LeftToRight:
 				// Cross-axis (height) = max(child.height + padding, current)

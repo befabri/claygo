@@ -8,6 +8,17 @@ type LayoutConfig struct {
 	ChildGap        uint16
 	ChildAlignment  ChildAlignment
 	LayoutDirection LayoutDirection
+	// WrapChildren makes children that do not fit on the layout axis start a
+	// new line: rows stacked top to bottom for LeftToRight, columns stacked
+	// left to right for TopToBottom. Lines break greedily at the sizes
+	// children have before Grow distributes space; each line then shares its
+	// own slack, ChildGap separates lines as well as children, and
+	// ChildAlignment places lines and their children the way it places a
+	// single row. A parent whose children fit on one line lays out exactly as
+	// it would with WrapChildren off.
+	//
+	// claygo extension; upstream Clay has no child wrapping.
+	WrapChildren bool
 }
 
 // TextElementConfig controls text measurement, wrapping, alignment, and render

@@ -65,18 +65,33 @@ func (c *Context) elementIsOffscreen(b BoundingBox) bool {
 // deltaTime parameter isn't needed here because transition advancing lives in
 // advanceTransitions, not the layout pass.
 func (c *Context) calculateFinalLayout() RenderCommandArray {
-	c.sizeContainersAlongAxis(true)
-	aspectRatioElements := c.collectAspectRatioElements()
-	// Clear the previous fill (last frame, or the first transition pass) before
-	// refilling, so pointer-bearing WrappedTextLine slots a later/smaller pass
-	// doesn't reach can't pin stale strings. Owned here (not resetEphemeralMemory)
-	// because EndLayout can run this twice with different line counts.
-	clear(c.wrappedTextLines.Data[:c.wrappedTextLines.Length])
-	c.wrappedTextLines.Length = 0
-	c.wrapTextElements()
-	c.scaleAspectRatioHeights(aspectRatioElements)
-	c.propagateTextHeights()
-	c.sizeContainersAlongAxis(false)
+	// Column wrap cannot break lines until heights are known, so the sizing
+	// sweep runs a second time when any TopToBottom wrap parent exists; row wrap
+	// and the default path take one sweep. The line pool is not rewound between
+	// the two: the second x pass reads the columns the first sweep packed.
+	c.wrapLines.Length = 0
+	c.wrapHasColumn = false
+	c.wrapColumnLinesValid = false
+	var aspectRatioElements []int32
+	for range 2 {
+		c.sizeContainersAlongAxis(true)
+		aspectRatioElements = c.collectAspectRatioElements()
+		// Zero the previous fill before refilling: a pass that wraps to fewer
+		// lines than the last leaves WrappedTextLine slots it never reaches, and
+		// those keep pinning the strings they point at. It lives here rather than
+		// in resetEphemeralMemory because the array is refilled on every sizing
+		// sweep, not once per frame.
+		clear(c.wrappedTextLines.Data[:c.wrappedTextLines.Length])
+		c.wrappedTextLines.Length = 0
+		c.wrapTextElements()
+		c.scaleAspectRatioHeights(aspectRatioElements)
+		c.propagateTextHeights()
+		c.sizeContainersAlongAxis(false)
+		c.wrapColumnLinesValid = true
+		if !c.wrapHasColumn {
+			break
+		}
+	}
 	c.scaleAspectRatioWidths(aspectRatioElements)
 
 	// Sort tree roots by zIndex ascending. Mirrors C's bubble sort at
@@ -299,7 +314,9 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 							X: float32(layoutCfg.Padding.Left) - halfGap,
 							Y: float32(layoutCfg.Padding.Top) - halfGap,
 						}
-						if layoutCfg.LayoutDirection == LeftToRight {
+						if layoutCfg.WrapChildren && cur.WrapLines.Length > 0 {
+							c.emitWrapDividers(cur, upBBox, dividerScrollOffset)
+						} else if layoutCfg.LayoutDirection == LeftToRight {
 							for i := range cur.Children.Length {
 								child := c.layoutElements.Get(cur.Children.Data[i])
 								if i > 0 {
@@ -585,6 +602,31 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 
 		layoutCfg := &cur.Config.Layout
 
+		// Both child-positioning paths below need the scroll offset, and both
+		// fill in ContentSize themselves once the children are placed.
+		var scrollData *scrollContainerDataInternal
+		var scrollOffset Vector2
+		if cur.Config.Clip.Horizontal || cur.Config.Clip.Vertical {
+			for sci := range c.scrollContainerDatas.Length {
+				sd := c.scrollContainerDatas.Get(sci)
+				if sd.ElementID != cur.ID {
+					continue
+				}
+				scrollData = sd
+				sd.BoundingBox = bbox
+				scrollOffset = cur.Config.Clip.ChildOffset
+				if c.externalScrollHandlingEnabled {
+					scrollOffset = Vector2{}
+				}
+				break
+			}
+		}
+
+		if layoutCfg.WrapChildren && cur.WrapLines.Length > 0 {
+			dfs, visited = c.positionWrapChildren(cur, bbox, scrollOffset, scrollData, dfs, visited)
+			continue
+		}
+
 		// On-axis ChildAlignment: compute the bounding box of all children
 		// along the layout axis, then shift the starting nextChildOffset to
 		// honor center/right/bottom alignment.
@@ -639,27 +681,10 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 			node.nextChildOffset.Y += extraSpace
 		}
 
-		// If this element is a clip container, record the inner content
-		// size on its scrollContainerData entry (used by GetScrollContainerData
-		// and the drag-scroll math in UpdateScrollContainers). Also remember
-		// the scroll offset so children are translated correctly below.
-		var scrollOffset Vector2
-		if cur.Config.Clip.Horizontal || cur.Config.Clip.Vertical {
-			for sci := range c.scrollContainerDatas.Length {
-				sd := c.scrollContainerDatas.Get(sci)
-				if sd.ElementID != cur.ID {
-					continue
-				}
-				sd.BoundingBox = bbox
-				sd.ContentSize = Dimensions{
-					Width:  contentSize.Width + float32(layoutCfg.Padding.Left+layoutCfg.Padding.Right),
-					Height: contentSize.Height + float32(layoutCfg.Padding.Top+layoutCfg.Padding.Bottom),
-				}
-				scrollOffset = cur.Config.Clip.ChildOffset
-				if c.externalScrollHandlingEnabled {
-					scrollOffset = Vector2{}
-				}
-				break
+		if scrollData != nil {
+			scrollData.ContentSize = Dimensions{
+				Width:  contentSize.Width + float32(layoutCfg.Padding.Left+layoutCfg.Padding.Right),
+				Height: contentSize.Height + float32(layoutCfg.Padding.Top+layoutCfg.Padding.Bottom),
 			}
 		}
 

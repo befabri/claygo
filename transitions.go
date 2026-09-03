@@ -330,6 +330,7 @@ func (c *Context) cloneElementsWithExitTransition() {
 		wroteClone = true
 		c.recordExitCloneSlot(rootCloneIdx)
 		rootClone.Exiting = true
+		rootClone.WrapLines = ArraySlice[WrapLine]{} // stale view into the previous pass's line pool
 		// Pin sizing to the recorded dimensions so the layout solver doesn't
 		// try to FIT/GROW the exiting element relative to its (now-missing)
 		// parent. Mirrors C clay.h:4494-4495.
@@ -406,6 +407,7 @@ func (c *Context) cloneElementsWithExitTransition() {
 				}
 				c.recordExitCloneSlot(nextIndex)
 				childClone.Exiting = true
+				childClone.WrapLines = ArraySlice[WrapLine]{}
 				if childClone.IsTextElement {
 					childClone.TextElementData.WrappedLines.Length = 0
 				}

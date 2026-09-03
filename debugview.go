@@ -729,6 +729,8 @@ func (c *Context) debugInspectorBody(item *LayoutElementHashMapItem) {
 				", bottom: "+strconv.Itoa(int(lc.Padding.Bottom))+" }", debugTextConfig())
 			Text(c, "Child Gap", debugTitleConfig())
 			Text(c, strconv.Itoa(int(lc.ChildGap)), debugTextConfig())
+			Text(c, "Wrap Children", debugTitleConfig())
+			Text(c, boolStr(lc.WrapChildren), debugTextConfig())
 		}
 	})
 	// Floating section.

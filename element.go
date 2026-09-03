@@ -330,6 +330,9 @@ func (c *Context) closeElement() {
 	if childCount > 0 {
 		openLE.Children.Data = c.layoutElementChildren.Data[childrenStart : childrenStart+childCount]
 	}
+	if layoutCfg.WrapChildren {
+		c.wrapCloseElement(openLE)
+	}
 
 	c.layoutElementChildrenBuffer.Length -= childCount
 

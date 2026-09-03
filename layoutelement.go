@@ -41,6 +41,11 @@ type LayoutElement struct {
 	// Exiting is true when the element is currently in an exit transition and
 	// its data was retained from a previous frame.
 	Exiting bool
+
+	// WrapLines views the lines packed into Context.wrapLines for this element
+	// when Config.Layout.WrapChildren is set. Every layout pass repacks the
+	// pool, so a view held across passes goes stale.
+	WrapLines ArraySlice[WrapLine]
 }
 
 // TextElementData is the per-text-leaf bookkeeping. Mirrors

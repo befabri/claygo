@@ -48,6 +48,15 @@ type Context struct {
 	// each leaf's WrappedLines view.
 	textElements Array[int32]
 
+	// wrapLines backs every LayoutElement.WrapLines view and is refilled by
+	// each calculateFinalLayout. wrapHasColumn, set when the x pass sees a
+	// TopToBottom wrap parent, makes calculateFinalLayout run its sizing sweep a
+	// second time; column lines only exist once the y pass has packed them, so
+	// wrapColumnLinesValid keeps the first x pass from reading them.
+	wrapLines            Array[WrapLine]
+	wrapHasColumn        bool
+	wrapColumnLinesValid bool
+
 	// pointerOverIds is the per-frame list of element ids the pointer is
 	// currently inside, populated by SetPointerState. Higher-z tree roots are
 	// scanned first.
@@ -313,6 +322,10 @@ func (c *Context) allocateEphemeralMemory() {
 	c.textElements = NewArray[int32](maxElements, a)
 	c.openClipElementStack = NewArray[int32](maxElements, a)
 	c.layoutElementClipElementIds = NewArray[int32](maxElements, a)
+	// A line holds at least one child, so one sizing sweep never needs more than
+	// maxElements lines. Twice that, because the second sweep re-packs while the
+	// first sweep's column lines are still in use.
+	c.wrapLines = NewArray[WrapLine](2*maxElements, a)
 
 	// Freshly-allocated arrays are already zero, so the first reset has nothing
 	// to clear: no live low-end and an empty clone region.

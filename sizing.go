@@ -85,6 +85,9 @@ func (c *Context) sizeOneRoot(xAxis bool, bfs, resizable *Array[int32]) {
 		parentIdx := bfs.GetValue(i)
 		parent := c.layoutElements.Get(parentIdx)
 		parentLayoutCfg := &parent.Config.Layout
+		if xAxis && parentLayoutCfg.WrapChildren && parentLayoutCfg.LayoutDirection == TopToBottom {
+			c.wrapHasColumn = true
+		}
 		growContainerCount := int32(0)
 		parentSize := parent.Dimensions.Width
 		parentPadding := float32(parentLayoutCfg.Padding.Left) + float32(parentLayoutCfg.Padding.Right)
@@ -123,12 +126,7 @@ func (c *Context) sizeOneRoot(xAxis bool, bfs, resizable *Array[int32]) {
 				continue
 			}
 
-			// Resizable set: anything that's not FIXED/PERCENT and not a
-			// non-wrapping text leaf. Text with WRAP_WORDS is allowed because
-			// the wrapping pass may need to flow into a smaller width.
-			isWrappingText := child.IsTextElement && child.TextConfig.WrapMode == TextWrapWords
-			if childSizing.Type != SizingTypePercent && childSizing.Type != SizingTypeFixed &&
-				(!child.IsTextElement || isWrappingText) {
+			if isResizableChild(child, xAxis) {
 				resizable.Add(childIdx)
 			}
 
@@ -172,6 +170,10 @@ func (c *Context) sizeOneRoot(xAxis bool, bfs, resizable *Array[int32]) {
 		}
 
 		if sizingAlongAxis {
+			if parentLayoutCfg.WrapChildren {
+				c.sizeWrapLinesAlongAxis(parent, xAxis, resizable)
+				continue
+			}
 			sizeToDistribute := parentSize - parentPadding - innerContentSize
 			switch {
 			case sizeToDistribute < 0:
@@ -191,6 +193,9 @@ func (c *Context) sizeOneRoot(xAxis bool, bfs, resizable *Array[int32]) {
 				growUnderflow(c, &sizeToDistribute, resizable, xAxis)
 			}
 		} else {
+			if parentLayoutCfg.WrapChildren && c.sizeWrapLinesAcrossAxis(parent, xAxis, resizable) {
+				continue
+			}
 			// Cross-axis sizing: GROW children expand to parent inner size,
 			// clamped to their own max; everything else stays put but is
 			// clamped to (minDim, parent inner size).
