@@ -5,3 +5,4 @@ ref:         e6cc36941ab2af5d81107617039d6f527a1c660b
 commit:      e6cc36941ab2af5d81107617039d6f527a1c660b
 commit-date: 2026-05-24T15:43:58Z (fetched)
 license:     zlib/libpng (notice retained in clay.h and ../LICENSE.md)
+patches:     0001-child-wrap.patch

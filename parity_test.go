@@ -10,39 +10,68 @@ import (
 	"testing"
 )
 
-// TestSceneParity guards against drift between three lists of scene names:
+// TestSceneParity guards against drift between the lists of scene names:
 //
 //  1. The committed testdata/*.golden.json files (the C oracle's regression
 //     net).
 //  2. The Go-side scene builders: goldenScenes (single-frame) in scenes_test.go
-//     plus goldenTransitionScenes (multi-frame) in scenes_transition_test.go.
-//  3. The oracle binary's --list output, if the binary has been built.
+//     plus goldenTransitionScenes (multi-frame) in scenes_transition_test.go
+//     for the upstream corpus, and extensionScenes (ext_ prefix) in
+//     scenes_ext_test.go for claygo's extensions.
+//  3. The oracle binaries' --list output, if they have been built: oracle
+//     (patched header) lists everything, oracle-upstream (verbatim header)
+//     lists the upstream corpus only.
 //
 // Any mismatch means somebody added a scene on one side without the other.
-// The Go and golden-file check is mandatory; the oracle-binary check is
-// best-effort and is skipped if oracle/oracle has not been compiled.
+// The Go and golden-file check is mandatory; the oracle-binary checks are
+// best-effort and are skipped if the binaries have not been compiled.
 func TestSceneParity(t *testing.T) {
 	goldenNames := listGoldenFiles(t)
-	sceneNames := append(keys(goldenScenes), transitionKeys(goldenTransitionScenes)...)
+	upstreamNames := append(keys(goldenScenes), transitionKeys(goldenTransitionScenes)...)
+	sceneNames := append(slices.Clone(upstreamNames), extensionKeys(extensionScenes)...)
 	slices.Sort(goldenNames)
+	slices.Sort(upstreamNames)
 	slices.Sort(sceneNames)
 
-	checkParity(t, "goldenScenes", sceneNames, "testdata", goldenNames)
+	checkParity(t, "Go scene tables", sceneNames, "testdata", goldenNames)
 
-	oraclePath := filepath.Join("oracle", "oracle")
-	if _, err := os.Stat(oraclePath); err != nil {
-		t.Skipf("skipping oracle --list cross-check: %v", err)
-		return
+	if oracleNames, ok := oracleList(t, "oracle"); ok {
+		checkParity(t, "oracle --list", oracleNames, "testdata", goldenNames)
+		checkParity(t, "oracle --list", oracleNames, "Go scene tables", sceneNames)
 	}
-	out, err := exec.Command("./"+oraclePath, "--list").Output()
+	if upstreamListed, ok := oracleList(t, "oracle-upstream"); ok {
+		checkParity(t, "oracle-upstream --list", upstreamListed, "upstream Go scene tables", upstreamNames)
+		for _, name := range upstreamListed {
+			if strings.HasPrefix(name, extensionScenePrefix) {
+				t.Errorf("oracle-upstream --list has extension scene %q; it must only know the upstream corpus", name)
+			}
+		}
+	}
+}
+
+// oracleList runs oracle/<binary> --list, or reports false (after logging a
+// skip reason) when the binary has not been built.
+func oracleList(t *testing.T, binary string) ([]string, bool) {
+	t.Helper()
+	path := filepath.Join("oracle", binary)
+	if _, err := os.Stat(path); err != nil {
+		// A missing binary is fine on a developer machine, but CI builds both
+		// before running go test (see .github/workflows/ci.yml); skipping
+		// there would let a scene dropped from main.c hide behind its stale
+		// golden, since regenerate never deletes files.
+		if os.Getenv("CI") != "" {
+			t.Fatalf("%s --list cross-check needs the binary under CI: %v (run make -C oracle all first)", binary, err)
+		}
+		t.Logf("skipping %s --list cross-check: %v", binary, err)
+		return nil, false
+	}
+	out, err := exec.Command("./"+path, "--list").Output()
 	if err != nil {
-		t.Fatalf("run %s --list: %v", oraclePath, err)
+		t.Fatalf("run %s --list: %v", path, err)
 	}
-	oracleNames := splitNonEmpty(string(out))
-	slices.Sort(oracleNames)
-
-	checkParity(t, "oracle --list", oracleNames, "testdata", goldenNames)
-	checkParity(t, "oracle --list", oracleNames, "goldenScenes", sceneNames)
+	names := splitNonEmpty(string(out))
+	slices.Sort(names)
+	return names, true
 }
 
 func listGoldenFiles(t *testing.T) []string {

@@ -1010,6 +1010,524 @@ static Clay_RenderCommandArray scene_border_between_children_odd_gap(void) {
     return Clay_EndLayout(0.0f);
 }
 
+#ifndef CLAY_ORACLE_UPSTREAM
+// ---------------------------------------------------------------------------
+// Extension scenes: claygo child wrap (layout.wrapChildren)
+// ---------------------------------------------------------------------------
+// Only compiled into the patched `oracle` binary. Names carry the ext_ prefix
+// so the Go parity test can tell them from the upstream corpus. Mirrored by
+// extensionScenes in scenes_ext_test.go.
+
+static Clay_Color ext_chip_color(int i) {
+    static const Clay_Color palette[3] = { { 200, 80, 80, 255 }, { 80, 200, 80, 255 }, { 80, 80, 200, 255 } };
+    return palette[i % 3];
+}
+
+// A fixed-size chip with the i-th palette color.
+static void ext_chip(int i, float w, float h) {
+    CLAY_AUTO_ID({ .layout = { .sizing = { CLAY_SIZING_FIXED(w), CLAY_SIZING_FIXED(h) } }, .backgroundColor = ext_chip_color(i) });
+}
+
+// 14 chips of 118 in a 650-wide strip: inner 634 takes five per line
+// (5*118 + 4*8 = 622), so lines of 5, 5 and 4. Fit height = 16 + 3*28 + 2*8.
+static Clay_RenderCommandArray scene_ext_wrap_rows_basic(void) {
+    Clay_BeginLayout();
+    CLAY_AUTO_ID({
+        .layout = {
+            .sizing = { CLAY_SIZING_FIXED(650), CLAY_SIZING_FIT(0) },
+            .padding = CLAY_PADDING_ALL(8),
+            .childGap = 8,
+            .wrapChildren = true,
+        },
+        .backgroundColor = { 30, 30, 36, 255 },
+    }) {
+        for (int i = 0; i < 14; i++) ext_chip(i, 118, 28);
+    }
+    return Clay_EndLayout(0.0f);
+}
+
+// Two identical strips whose chips fit on one line, the first wrapping and the
+// second not. Their commands must match apart from ids (the identity
+// property in docs/child-wrap-spec.md).
+static Clay_RenderCommandArray scene_ext_wrap_rows_single_line(void) {
+    Clay_BeginLayout();
+    CLAY_AUTO_ID({ .layout = { .sizing = { CLAY_SIZING_FIT(0), CLAY_SIZING_FIT(0) }, .childGap = 16, .layoutDirection = CLAY_TOP_TO_BOTTOM } }) {
+        for (int strip = 0; strip < 2; strip++) {
+            CLAY_AUTO_ID({
+                .layout = {
+                    .sizing = { CLAY_SIZING_FIXED(650), CLAY_SIZING_FIT(0) },
+                    .padding = CLAY_PADDING_ALL(8),
+                    .childGap = 8,
+                    .childAlignment = { CLAY_ALIGN_X_CENTER, CLAY_ALIGN_Y_CENTER },
+                    .wrapChildren = strip == 0,
+                },
+                .backgroundColor = { 30, 30, 36, 255 },
+            }) {
+                ext_chip(0, 118, 28);
+                ext_chip(1, 118, 40);
+                ext_chip(2, 118, 28);
+            }
+        }
+    }
+    return Clay_EndLayout(0.0f);
+}
+
+// GROW chips pack at their minimum width and then share their own line's
+// slack, smallest first: [100,150] → 188,188; [120,200] → 176,200;
+// [90, 80..100] → 276,100 (the capped chip stops at 100).
+static Clay_RenderCommandArray scene_ext_wrap_rows_grow(void) {
+    Clay_BeginLayout();
+    CLAY_AUTO_ID({
+        .layout = {
+            .sizing = { CLAY_SIZING_FIXED(400), CLAY_SIZING_FIT(0) },
+            .padding = CLAY_PADDING_ALL(8),
+            .childGap = 8,
+            .wrapChildren = true,
+        },
+        .backgroundColor = { 30, 30, 36, 255 },
+    }) {
+        CLAY_AUTO_ID({ .layout = { .sizing = { CLAY_SIZING_GROW(100), CLAY_SIZING_FIXED(30) } }, .backgroundColor = ext_chip_color(0) });
+        CLAY_AUTO_ID({ .layout = { .sizing = { CLAY_SIZING_GROW(150), CLAY_SIZING_FIXED(30) } }, .backgroundColor = ext_chip_color(1) });
+        CLAY_AUTO_ID({ .layout = { .sizing = { CLAY_SIZING_GROW(120), CLAY_SIZING_FIXED(30) } }, .backgroundColor = ext_chip_color(2) });
+        CLAY_AUTO_ID({ .layout = { .sizing = { CLAY_SIZING_GROW(200), CLAY_SIZING_FIXED(30) } }, .backgroundColor = ext_chip_color(0) });
+        CLAY_AUTO_ID({ .layout = { .sizing = { CLAY_SIZING_GROW(90), CLAY_SIZING_FIXED(30) } }, .backgroundColor = ext_chip_color(1) });
+        CLAY_AUTO_ID({ .layout = { .sizing = { CLAY_SIZING_GROW(80, 100), CLAY_SIZING_FIXED(30) } }, .backgroundColor = ext_chip_color(2) });
+    }
+    return Clay_EndLayout(0.0f);
+}
+
+// PERCENT children resolve against upstream's basis (500 - 20 - 4*10 = 440,
+// so 220 and 110) before packing: [220,100,100] then [110,200].
+static Clay_RenderCommandArray scene_ext_wrap_rows_percent(void) {
+    Clay_BeginLayout();
+    CLAY_AUTO_ID({
+        .layout = {
+            .sizing = { CLAY_SIZING_FIXED(500), CLAY_SIZING_FIT(0) },
+            .padding = CLAY_PADDING_ALL(10),
+            .childGap = 10,
+            .wrapChildren = true,
+        },
+        .backgroundColor = { 30, 30, 36, 255 },
+    }) {
+        CLAY_AUTO_ID({ .layout = { .sizing = { CLAY_SIZING_PERCENT(0.5f), CLAY_SIZING_FIXED(40) } }, .backgroundColor = ext_chip_color(0) });
+        ext_chip(1, 100, 40);
+        ext_chip(2, 100, 40);
+        CLAY_AUTO_ID({ .layout = { .sizing = { CLAY_SIZING_PERCENT(0.25f), CLAY_SIZING_FIXED(40) } }, .backgroundColor = ext_chip_color(0) });
+        ext_chip(1, 200, 40);
+    }
+    return Clay_EndLayout(0.0f);
+}
+
+// Six chips of mixed sizes in a 300x200 box pack as [90,120,60], [100,80],
+// [110] with natural extents 30, 40, 28; the 74 px of vertical slack goes to
+// the lines smallest first, then each child aligns inside its line.
+static Clay_RenderCommandArray scene_ext_wrap_rows_aligned(Clay_ChildAlignment alignment) {
+    Clay_BeginLayout();
+    CLAY_AUTO_ID({
+        .layout = {
+            .sizing = { CLAY_SIZING_FIXED(300), CLAY_SIZING_FIXED(200) },
+            .padding = CLAY_PADDING_ALL(8),
+            .childGap = 6,
+            .childAlignment = alignment,
+            .wrapChildren = true,
+        },
+        .backgroundColor = { 30, 30, 36, 255 },
+    }) {
+        ext_chip(0, 90, 20);
+        ext_chip(1, 120, 30);
+        ext_chip(2, 60, 24);
+        ext_chip(3, 100, 20);
+        ext_chip(4, 80, 40);
+        ext_chip(5, 110, 28);
+    }
+    return Clay_EndLayout(0.0f);
+}
+
+static Clay_RenderCommandArray scene_ext_wrap_rows_align_center(void) {
+    return scene_ext_wrap_rows_aligned((Clay_ChildAlignment){ CLAY_ALIGN_X_CENTER, CLAY_ALIGN_Y_CENTER });
+}
+
+static Clay_RenderCommandArray scene_ext_wrap_rows_align_right_bottom(void) {
+    return scene_ext_wrap_rows_aligned((Clay_ChildAlignment){ CLAY_ALIGN_X_RIGHT, CLAY_ALIGN_Y_BOTTOM });
+}
+
+// Odd gap (9 → halfGap 4) with between-children dividers: within a line the
+// divider spans that line's band, between lines it spans the parent's width.
+// 7 chips of 80 in inner 284 pack three per line.
+static Clay_RenderCommandArray scene_ext_wrap_rows_gap_borders(void) {
+    Clay_BeginLayout();
+    CLAY_AUTO_ID({
+        .layout = {
+            .sizing = { CLAY_SIZING_FIXED(300), CLAY_SIZING_FIT(0) },
+            .padding = CLAY_PADDING_ALL(8),
+            .childGap = 9,
+            .wrapChildren = true,
+        },
+        .backgroundColor = { 30, 30, 36, 255 },
+        .border = {
+            .color = { 240, 200, 80, 255 },
+            .width = { .betweenChildren = 2 },
+        },
+    }) {
+        for (int i = 0; i < 7; i++) ext_chip(i, 80, 30);
+    }
+    return Clay_EndLayout(0.0f);
+}
+
+// A child that alone exceeds the inner width gets its own line: the FIT text
+// box shrinks to the inner width and its text wraps; the FIXED chip cannot
+// shrink and overflows.
+static Clay_RenderCommandArray scene_ext_wrap_rows_lone_wide(void) {
+    Clay_BeginLayout();
+    CLAY_AUTO_ID({
+        .layout = {
+            .sizing = { CLAY_SIZING_FIXED(200), CLAY_SIZING_FIT(0) },
+            .padding = CLAY_PADDING_ALL(8),
+            .childGap = 8,
+            .wrapChildren = true,
+        },
+        .backgroundColor = { 30, 30, 36, 255 },
+    }) {
+        ext_chip(0, 60, 30);
+        CLAY_AUTO_ID({
+            .layout = { .sizing = { CLAY_SIZING_FIT(0), CLAY_SIZING_FIT(0) }, .padding = CLAY_PADDING_ALL(4) },
+            .backgroundColor = { 80, 80, 120, 255 },
+        }) {
+            CLAY_TEXT(CLAY_STRING("The quick brown fox jumps over"), CLAY_TEXT_CONFIG({
+                .textColor = { 240, 240, 240, 255 },
+                .fontSize = 16,
+                .wrapMode = CLAY_TEXT_WRAP_WORDS,
+            }));
+        }
+        ext_chip(2, 300, 30);
+    }
+    return Clay_EndLayout(0.0f);
+}
+
+// Chips sized by their labels (7 px per char at font 14 plus 12 padding)
+// packing into a 320-wide strip, vertically centered within their lines.
+static Clay_RenderCommandArray scene_ext_wrap_rows_text_children(void) {
+    static const char *labels[8] = { "Workspaces", "Layout", "Window", "Status", "Alerts", "System", "Clock", "Battery" };
+    Clay_BeginLayout();
+    CLAY_AUTO_ID({
+        .layout = {
+            .sizing = { CLAY_SIZING_FIXED(320), CLAY_SIZING_FIT(0) },
+            .padding = CLAY_PADDING_ALL(8),
+            .childGap = 8,
+            .childAlignment = { CLAY_ALIGN_X_LEFT, CLAY_ALIGN_Y_CENTER },
+            .wrapChildren = true,
+        },
+        .backgroundColor = { 30, 30, 36, 255 },
+    }) {
+        for (int i = 0; i < 8; i++) {
+            CLAY_AUTO_ID({
+                .layout = { .sizing = { CLAY_SIZING_FIT(0), CLAY_SIZING_FIT(0) }, .padding = CLAY_PADDING_ALL(6) },
+                .backgroundColor = ext_chip_color(i),
+            }) {
+                Clay_String label = { .length = (int32_t)strlen(labels[i]), .chars = labels[i] };
+                CLAY_TEXT(label, CLAY_TEXT_CONFIG({
+                    .textColor = { 240, 240, 240, 255 },
+                    .fontSize = 14,
+                    .wrapMode = CLAY_TEXT_WRAP_WORDS,
+                }));
+            }
+        }
+    }
+    return Clay_EndLayout(0.0f);
+}
+
+// A FIT-width strip next to a 900-wide sidebar in a GROW row: the row shrinks
+// the strip toward its wrap minimum (padding + widest chip), so 8 chips of 100
+// that would take 854 px on one line wrap inside the 356 px left over.
+static Clay_RenderCommandArray scene_ext_wrap_rows_fit_in_grow(void) {
+    Clay_BeginLayout();
+    CLAY_AUTO_ID({
+        .layout = {
+            .sizing = { CLAY_SIZING_GROW(0), CLAY_SIZING_GROW(0) },
+            .padding = CLAY_PADDING_ALL(8),
+            .childGap = 8,
+            .layoutDirection = CLAY_LEFT_TO_RIGHT,
+        },
+        .backgroundColor = { 30, 30, 36, 255 },
+    }) {
+        CLAY_AUTO_ID({ .layout = { .sizing = { CLAY_SIZING_FIXED(900), CLAY_SIZING_FIXED(200) } }, .backgroundColor = { 60, 60, 80, 255 } });
+        CLAY_AUTO_ID({
+            .layout = {
+                .sizing = { CLAY_SIZING_FIT(0), CLAY_SIZING_FIT(0) },
+                .padding = CLAY_PADDING_ALL(6),
+                .childGap = 6,
+                .wrapChildren = true,
+            },
+            .backgroundColor = { 80, 80, 120, 255 },
+        }) {
+            for (int i = 0; i < 8; i++) ext_chip(i, 100, 30);
+        }
+    }
+    return Clay_EndLayout(0.0f);
+}
+
+// A clipping wrap parent shorter than its three lines: lines keep their
+// natural height (children are not squashed) and scroll by the child offset.
+static Clay_RenderCommandArray scene_ext_wrap_rows_clip_scroll(void) {
+    Clay_BeginLayout();
+    CLAY_AUTO_ID({
+        .layout = {
+            .sizing = { CLAY_SIZING_FIXED(300), CLAY_SIZING_FIXED(80) },
+            .padding = CLAY_PADDING_ALL(8),
+            .childGap = 8,
+            .wrapChildren = true,
+        },
+        .backgroundColor = { 30, 30, 36, 255 },
+        .clip = { .horizontal = true, .vertical = true, .childOffset = { 0, -30 } },
+    }) {
+        for (int i = 0; i < 9; i++) ext_chip(i, 80, 30);
+    }
+    return Clay_EndLayout(0.0f);
+}
+
+// A wrapping strip inside a wrapping strip. The inner FIT strip (436 px on one
+// line) gets its own outer line, shrinks to the outer inner width and wraps
+// its own chips 7 + 1.
+static Clay_RenderCommandArray scene_ext_wrap_rows_nested(void) {
+    Clay_BeginLayout();
+    CLAY_AUTO_ID({
+        .layout = {
+            .sizing = { CLAY_SIZING_FIXED(400), CLAY_SIZING_FIT(0) },
+            .padding = CLAY_PADDING_ALL(8),
+            .childGap = 8,
+            .wrapChildren = true,
+        },
+        .backgroundColor = { 30, 30, 36, 255 },
+    }) {
+        ext_chip(0, 120, 30);
+        ext_chip(1, 120, 30);
+        CLAY_AUTO_ID({
+            .layout = {
+                .sizing = { CLAY_SIZING_FIT(0), CLAY_SIZING_FIT(0) },
+                .padding = CLAY_PADDING_ALL(4),
+                .childGap = 4,
+                .wrapChildren = true,
+            },
+            .backgroundColor = { 80, 80, 120, 255 },
+        }) {
+            for (int i = 0; i < 8; i++) ext_chip(i, 50, 20);
+        }
+        ext_chip(2, 120, 30);
+        ext_chip(0, 120, 30);
+    }
+    return Clay_EndLayout(0.0f);
+}
+
+// Five chips on two lines; chip B has an exit transition. Frames 2 and 3 omit
+// it, so its clone sits at B's slot while packing skips it: A, C and D now
+// share line one and E alone is line two. Frame 3 is dumped, with the clone
+// sliding at x = 96 - 0.1 * 596.
+static void ext_declare_wrap_exit(bool withB) {
+    Clay_TransitionElementConfig transition = {
+        .handler = linear_x_interpolator,
+        .duration = 1.0f,
+        .properties = CLAY_TRANSITION_PROPERTY_X,
+        .exit = { .setFinalState = exit_slide_off },
+    };
+    Clay_BeginLayout();
+    CLAY(CLAY_ID("WrapExitStrip"), {
+        .layout = {
+            .sizing = { CLAY_SIZING_FIXED(300), CLAY_SIZING_FIT(0) },
+            .padding = CLAY_PADDING_ALL(8),
+            .childGap = 8,
+            .wrapChildren = true,
+        },
+        .backgroundColor = { 30, 30, 36, 255 },
+    }) {
+        CLAY(CLAY_ID("WrapExitA"), { .layout = { .sizing = { CLAY_SIZING_FIXED(80), CLAY_SIZING_FIXED(30) } }, .backgroundColor = ext_chip_color(0) });
+        if (withB) {
+            CLAY(CLAY_ID("WrapExitB"), { .layout = { .sizing = { CLAY_SIZING_FIXED(80), CLAY_SIZING_FIXED(30) } }, .backgroundColor = ext_chip_color(1), .transition = transition });
+        }
+        CLAY(CLAY_ID("WrapExitC"), { .layout = { .sizing = { CLAY_SIZING_FIXED(80), CLAY_SIZING_FIXED(30) } }, .backgroundColor = ext_chip_color(2) });
+        CLAY(CLAY_ID("WrapExitD"), { .layout = { .sizing = { CLAY_SIZING_FIXED(80), CLAY_SIZING_FIXED(30) } }, .backgroundColor = ext_chip_color(0) });
+        CLAY(CLAY_ID("WrapExitE"), { .layout = { .sizing = { CLAY_SIZING_FIXED(80), CLAY_SIZING_FIXED(30) } }, .backgroundColor = ext_chip_color(1) });
+    }
+}
+
+static Clay_RenderCommandArray scene_ext_wrap_exit_transition(void) {
+    ext_declare_wrap_exit(true);
+    Clay_EndLayout(ORACLE_TRANSITION_DELTA);
+    ext_declare_wrap_exit(false);
+    Clay_EndLayout(ORACLE_TRANSITION_DELTA);
+    ext_declare_wrap_exit(false);
+    return Clay_EndLayout(ORACLE_TRANSITION_DELTA);
+}
+
+// Column wrap: nine fixed boxes stack top to bottom inside 184 px of inner
+// height and break into columns of [40,60,50], [30,70,40], [40,60,20]; the
+// FIT width becomes the stacked column widths (120 + 110 + 100 plus gaps).
+static Clay_RenderCommandArray scene_ext_wrap_cols_fixed_height(void) {
+    static const float sizes[9][2] = { {100, 40}, {80, 60}, {120, 50}, {60, 30}, {90, 70}, {110, 40}, {70, 40}, {100, 60}, {80, 20} };
+    Clay_BeginLayout();
+    CLAY_AUTO_ID({
+        .layout = {
+            .sizing = { CLAY_SIZING_FIT(0), CLAY_SIZING_FIXED(200) },
+            .padding = CLAY_PADDING_ALL(8),
+            .childGap = 8,
+            .layoutDirection = CLAY_TOP_TO_BOTTOM,
+            .wrapChildren = true,
+        },
+        .backgroundColor = { 30, 30, 36, 255 },
+    }) {
+        for (int i = 0; i < 9; i++) ext_chip(i, sizes[i][0], sizes[i][1]);
+    }
+    return Clay_EndLayout(0.0f);
+}
+
+// Column wrap with GROW in both directions, which needs the second sizing
+// sweep: the text boxes first take the whole 384 px inner width, the y pass
+// packs two columns and grows the GROW-height boxes inside each, then the
+// second x pass shrinks the two 384-wide columns to 188 each and the text
+// boxes follow their column.
+static Clay_RenderCommandArray scene_ext_wrap_cols_grow_height(void) {
+    Clay_BeginLayout();
+    CLAY_AUTO_ID({
+        .layout = {
+            .sizing = { CLAY_SIZING_FIXED(400), CLAY_SIZING_FIXED(160) },
+            .padding = CLAY_PADDING_ALL(8),
+            .childGap = 8,
+            .layoutDirection = CLAY_TOP_TO_BOTTOM,
+            .wrapChildren = true,
+        },
+        .backgroundColor = { 30, 30, 36, 255 },
+    }) {
+        for (int i = 0; i < 6; i++) {
+            if (i % 2 == 0) {
+                CLAY_AUTO_ID({
+                    .layout = { .sizing = { CLAY_SIZING_GROW(0), CLAY_SIZING_FIT(0) }, .padding = CLAY_PADDING_ALL(4) },
+                    .backgroundColor = ext_chip_color(i),
+                }) {
+                    CLAY_TEXT(CLAY_STRING("Quick brown fox"), CLAY_TEXT_CONFIG({
+                        .textColor = { 240, 240, 240, 255 },
+                        .fontSize = 16,
+                        .wrapMode = CLAY_TEXT_WRAP_WORDS,
+                    }));
+                }
+            } else {
+                CLAY_AUTO_ID({ .layout = { .sizing = { CLAY_SIZING_FIXED(60), CLAY_SIZING_GROW(20) } }, .backgroundColor = ext_chip_color(i) });
+            }
+        }
+    }
+    return Clay_EndLayout(0.0f);
+}
+// Clipping wrap parents keep upstream's padding-only minimum on the clipped
+// axis. Top: a scrolling wrap pane (three lines, 122 tall) inside a 120-tall
+// column shrinks to 66 so the fixed footer fits. Bottom: a column-wrap pane
+// whose four columns stack to 280 sits in a 200-wide row next to a fixed box;
+// the second sizing sweep shrinks it to 116 and the re-pack must not grow it
+// back.
+static Clay_RenderCommandArray scene_ext_wrap_clip_shrink(void) {
+    Clay_BeginLayout();
+    CLAY_AUTO_ID({ .layout = { .sizing = { CLAY_SIZING_FIT(0), CLAY_SIZING_FIT(0) }, .childGap = 8, .layoutDirection = CLAY_TOP_TO_BOTTOM } }) {
+        CLAY_AUTO_ID({
+            .layout = {
+                .sizing = { CLAY_SIZING_FIXED(300), CLAY_SIZING_FIXED(120) },
+                .padding = CLAY_PADDING_ALL(8),
+                .childGap = 8,
+                .layoutDirection = CLAY_TOP_TO_BOTTOM,
+            },
+            .backgroundColor = { 30, 30, 36, 255 },
+        }) {
+            CLAY_AUTO_ID({
+                .layout = {
+                    .sizing = { CLAY_SIZING_GROW(0), CLAY_SIZING_FIT(0) },
+                    .padding = CLAY_PADDING_ALL(8),
+                    .childGap = 8,
+                    .wrapChildren = true,
+                },
+                .backgroundColor = { 80, 80, 120, 255 },
+                .clip = { .horizontal = true, .vertical = true },
+            }) {
+                for (int i = 0; i < 9; i++) ext_chip(i, 80, 30);
+            }
+            CLAY_AUTO_ID({ .layout = { .sizing = { CLAY_SIZING_FIXED(100), CLAY_SIZING_FIXED(30) } }, .backgroundColor = { 60, 60, 80, 255 } });
+        }
+        CLAY_AUTO_ID({
+            .layout = {
+                .sizing = { CLAY_SIZING_FIXED(200), CLAY_SIZING_FIXED(150) },
+                .padding = CLAY_PADDING_ALL(8),
+                .childGap = 8,
+                .layoutDirection = CLAY_LEFT_TO_RIGHT,
+            },
+            .backgroundColor = { 30, 30, 36, 255 },
+        }) {
+            CLAY_AUTO_ID({
+                .layout = {
+                    .sizing = { CLAY_SIZING_FIT(0), CLAY_SIZING_GROW(0) },
+                    .padding = CLAY_PADDING_ALL(8),
+                    .childGap = 8,
+                    .layoutDirection = CLAY_TOP_TO_BOTTOM,
+                    .wrapChildren = true,
+                },
+                .backgroundColor = { 80, 80, 120, 255 },
+                .clip = { .horizontal = true, .vertical = true },
+            }) {
+                for (int i = 0; i < 8; i++) ext_chip(i, 60, 40);
+            }
+            CLAY_AUTO_ID({ .layout = { .sizing = { CLAY_SIZING_FIXED(60), CLAY_SIZING_FIXED(100) } }, .backgroundColor = { 60, 60, 80, 255 } });
+        }
+    }
+    return Clay_EndLayout(0.0f);
+}
+// A parent shorter than its stacked lines: 120x40 with gap 10 holds three
+// lines of 50x30 FIXED chips (natural 30 each, 110 stacked), so the line
+// extents are squashed to 0 but the chips cannot follow. Each line must start
+// below the previous line's chips (y = 40, 80), overflowing the parent, not
+// over them, and the dividers of the lines pushed past the parent's edge must
+// end at their own line's end rather than at the parent's (never negative).
+static Clay_RenderCommandArray scene_ext_wrap_rows_short_parent(void) {
+    Clay_BeginLayout();
+    CLAY_AUTO_ID({
+        .layout = {
+            .sizing = { CLAY_SIZING_FIXED(120), CLAY_SIZING_FIXED(40) },
+            .childGap = 10,
+            .wrapChildren = true,
+        },
+        .backgroundColor = { 30, 30, 36, 255 },
+        .border = {
+            .color = { 240, 200, 80, 255 },
+            .width = { .betweenChildren = 2 },
+        },
+    }) {
+        for (int i = 0; i < 6; i++) ext_chip(i, 50, 30);
+    }
+    return Clay_EndLayout(0.0f);
+}
+
+// Two column-wrap panes with GROW-width cells, the second one clipping.
+// Clipping must not change GROW sizing: in both, four 30-tall cells break
+// into two columns of two, and each cell takes its column's 188 px, because
+// the first sweep leaves column children at their content width instead of
+// growing them to the pane and mistaking that for the column's content.
+static Clay_RenderCommandArray scene_ext_wrap_cols_clip_grow(void) {
+    Clay_BeginLayout();
+    CLAY_AUTO_ID({ .layout = { .sizing = { CLAY_SIZING_FIT(0), CLAY_SIZING_FIT(0) }, .childGap = 8, .layoutDirection = CLAY_TOP_TO_BOTTOM } }) {
+        for (int pane = 0; pane < 2; pane++) {
+            CLAY_AUTO_ID({
+                .layout = {
+                    .sizing = { CLAY_SIZING_FIXED(400), CLAY_SIZING_FIXED(100) },
+                    .padding = CLAY_PADDING_ALL(8),
+                    .childGap = 8,
+                    .layoutDirection = CLAY_TOP_TO_BOTTOM,
+                    .wrapChildren = true,
+                },
+                .backgroundColor = { 30, 30, 36, 255 },
+                .clip = { .horizontal = pane == 1, .vertical = pane == 1 },
+            }) {
+                for (int i = 0; i < 4; i++) {
+                    CLAY_AUTO_ID({ .layout = { .sizing = { CLAY_SIZING_GROW(60), CLAY_SIZING_FIXED(30) } }, .backgroundColor = ext_chip_color(i) });
+                }
+            }
+        }
+    }
+    return Clay_EndLayout(0.0f);
+}
+#endif // CLAY_ORACLE_UPSTREAM
 
 // ---------------------------------------------------------------------------
 // Scene dispatch
@@ -1057,6 +1575,26 @@ static Scene SCENES[] = {
     { "exit_single_mid",            scene_exit_single_mid            },
     { "exit_single_completed",      scene_exit_single_completed      },
     { "border_between_children_odd_gap", scene_border_between_children_odd_gap },
+#ifndef CLAY_ORACLE_UPSTREAM
+    { "ext_wrap_rows_basic",              scene_ext_wrap_rows_basic              },
+    { "ext_wrap_rows_single_line",        scene_ext_wrap_rows_single_line        },
+    { "ext_wrap_rows_grow",               scene_ext_wrap_rows_grow               },
+    { "ext_wrap_rows_percent",            scene_ext_wrap_rows_percent            },
+    { "ext_wrap_rows_align_center",       scene_ext_wrap_rows_align_center       },
+    { "ext_wrap_rows_align_right_bottom", scene_ext_wrap_rows_align_right_bottom },
+    { "ext_wrap_rows_gap_borders",        scene_ext_wrap_rows_gap_borders        },
+    { "ext_wrap_rows_lone_wide",          scene_ext_wrap_rows_lone_wide          },
+    { "ext_wrap_rows_text_children",      scene_ext_wrap_rows_text_children      },
+    { "ext_wrap_rows_fit_in_grow",        scene_ext_wrap_rows_fit_in_grow        },
+    { "ext_wrap_rows_clip_scroll",        scene_ext_wrap_rows_clip_scroll        },
+    { "ext_wrap_rows_nested",             scene_ext_wrap_rows_nested             },
+    { "ext_wrap_exit_transition",         scene_ext_wrap_exit_transition         },
+    { "ext_wrap_cols_fixed_height",       scene_ext_wrap_cols_fixed_height       },
+    { "ext_wrap_cols_grow_height",        scene_ext_wrap_cols_grow_height        },
+    { "ext_wrap_clip_shrink",             scene_ext_wrap_clip_shrink             },
+    { "ext_wrap_rows_short_parent",       scene_ext_wrap_rows_short_parent       },
+    { "ext_wrap_cols_clip_grow",          scene_ext_wrap_cols_clip_grow          },
+#endif
 };
 static const int SCENE_COUNT = (int)(sizeof(SCENES) / sizeof(SCENES[0]));
 

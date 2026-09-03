@@ -1,0 +1,177 @@
+claygo extension: child wrap (Clay_LayoutConfig.wrapChildren).
+
+Applied on top of the verbatim upstream clay.h by oracle/Makefile to build
+clay_ext.h. This patch carries only what has to live inside upstream's own
+structs and functions: the wrapChildren config field, the Clay__WrapLine type,
+the element and context fields, one-line hooks tagged "claygo extension:
+child wrap", and one #include of patches/child-wrap.h, which holds the
+extension's functions as plain C.
+
+Never edit the hunks in place. `make rebase-patch` applies this patch onto
+clay.h as clay_ext.h.work; edit that file, then `make refresh-patch` re-diffs
+it with current line numbers and context. See oracle/UPSTREAM.md
+("Extensions") and docs/child-wrap-spec.md.
+
+--- a/clay.h
++++ b/clay.h
+@@ -355,6 +355,7 @@
+     uint16_t childGap; // Controls the gap in pixels between child elements along the layout axis (horizontal gap for LEFT_TO_RIGHT, vertical gap for TOP_TO_BOTTOM).
+     Clay_ChildAlignment childAlignment; // Controls how child elements are aligned on each axis.
+     Clay_LayoutDirection layoutDirection; // Controls the direction in which child elements will be automatically laid out.
++    bool wrapChildren; // claygo extension: child wrap. Children that do not fit on the layout axis start a new line: rows for LEFT_TO_RIGHT, columns for TOP_TO_BOTTOM.
+ } Clay_LayoutConfig;
+ 
+ CLAY__WRAPPER_STRUCT(Clay_LayoutConfig);
+@@ -1198,6 +1199,21 @@
+ 
+ CLAY__ARRAY_DEFINE(Clay__WrappedTextLine, Clay__WrappedTextLineArray)
+ 
++// claygo extension: child wrap (docs/child-wrap-spec.md, wrapchildren.go). One run of
++// children that share a line (row wrap) or a column (column wrap) of a parent
++// declared with layout.wrapChildren. Lines are contiguous child ranges that
++// together cover every child; exiting children never break a line and add
++// nothing to it, but stay inside the range they fall in.
++typedef struct {
++    int32_t start;       // child offset of the first child in the line
++    int32_t count;       // children [start, start + count), exiting ones included
++    float contentSize;   // wrap-axis content at pack time: live child sizes plus gaps
++    float naturalExtent; // cross axis: the largest live child in the line
++    float extent;        // cross axis: naturalExtent plus this line's share of the parent's slack
++} Clay__WrapLine;
++
++CLAY__ARRAY_DEFINE(Clay__WrapLine, Clay__WrapLineArray)
++
+ typedef struct {
+     Clay_String text;
+     Clay_Dimensions preferredDimensions;
+@@ -1226,6 +1242,9 @@
+     // True if the element is currently in an exit transition, and is "synthetic"
+     // i.e. data was retained from previous frames
+     bool exiting;
++    // claygo extension: child wrap: lines packed for this element when
++    // config.layout.wrapChildren is set. A view into Clay_Context.wrapLines.
++    Clay__WrapLineArraySlice wrapLines;
+ } Clay_LayoutElement;
+ 
+ CLAY__ARRAY_DEFINE(Clay_LayoutElement, Clay_LayoutElementArray)
+@@ -1360,6 +1379,10 @@
+     Clay__StringArray layoutElementIdStrings;
+     Clay__WrappedTextLineArray wrappedTextLines;
+     Clay__LayoutElementTreeNodeArray layoutElementTreeNodeArray1;
++    // claygo extension: child wrap
++    Clay__WrapLineArray wrapLines;
++    bool wrapHasColumn;         // a TOP_TO_BOTTOM wrap parent was seen in the x pass: run the sizing sweep twice
++    bool wrapColumnLinesValid;  // column lines exist for this Clay__CalculateFinalLayout call (set after the y pass)
+     Clay__LayoutElementTreeRootArray layoutElementTreeRoots;
+     Clay__LayoutElementHashMapItemArray layoutElementsHashMapInternal;
+     Clay__int32_tArray layoutElementsHashMap;
+@@ -1781,6 +1804,9 @@
+     return point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height;
+ }
+ 
++// claygo extension: child wrap: called from Clay__CloseElement, defined in patches/child-wrap.h (included below).
++void Clay__WrapCloseElement(Clay_Context *context, Clay_LayoutElement *openLayoutElement);
++
+ Clay_LayoutElementHashMapItem* Clay__AddHashMapItem(Clay_ElementId elementId, Clay_LayoutElement* layoutElement) {
+     Clay_Context* context = Clay_GetCurrentContext();
+     if (context->layoutElementsHashMapInternal.length == context->layoutElementsHashMapInternal.capacity - 1) {
+@@ -1929,6 +1955,7 @@
+         }
+     }
+ 
++    if (layoutConfig->wrapChildren) { Clay__WrapCloseElement(context, openLayoutElement); } // claygo extension: child wrap
+     context->layoutElementChildrenBuffer.length -= openLayoutElement->children.length;
+ 
+     // Clamp element min and max width to the values configured in the layout
+@@ -2229,6 +2256,7 @@
+ 
+     context->layoutElementIdStrings = Clay__StringArray_Allocate_Arena(maxElementCount, arena);
+     context->wrappedTextLines = Clay__WrappedTextLineArray_Allocate_Arena(maxElementCount, arena);
++    context->wrapLines = Clay__WrapLineArray_Allocate_Arena(maxElementCount * 2, arena); // claygo extension: child wrap
+     context->layoutElementTreeNodeArray1 = Clay__LayoutElementTreeNodeArray_Allocate_Arena(maxElementCount, arena);
+     context->layoutElementTreeRoots = Clay__LayoutElementTreeRootArray_Allocate_Arena(maxElementCount, arena);
+     context->layoutElementChildren = Clay__int32_tArray_Allocate_Arena(maxElementCount, arena);
+@@ -2277,6 +2305,8 @@
+     }
+ }
+ 
++#include "patches/child-wrap.h" // claygo extension: child wrap: the helpers the tagged hooks call.
++
+ // Writes out the location of text elements to layout elements buffer 1
+ void Clay__SizeContainersAlongAxis(bool xAxis, float deltaTime, Clay__int32_tArray* textElementsOut, Clay__int32_tArray* aspectRatioElementsOut) {
+     Clay_Context* context = Clay_GetCurrentContext();
+@@ -2332,6 +2362,7 @@
+             Clay_LayoutElement *parent = Clay_LayoutElementArray_Get(&context->layoutElements, parentIndex);
+             Clay_LayoutConfig *parentLayoutConfig = &parent->config.layout;
+             int32_t growContainerCount = 0;
++            if (xAxis && parentLayoutConfig->wrapChildren && parentLayoutConfig->layoutDirection == CLAY_TOP_TO_BOTTOM) { context->wrapHasColumn = true; } // claygo extension: child wrap
+             float parentSize = xAxis ? parent->dimensions.width : parent->dimensions.height;
+             float parentPadding = (float)(xAxis ? (parentLayoutConfig->padding.left + parentLayoutConfig->padding.right) : (parentLayoutConfig->padding.top + parentLayoutConfig->padding.bottom));
+             float innerContentSize = 0, totalPaddingAndChildGaps = parentPadding;
+@@ -2400,6 +2431,7 @@
+             }
+ 
+             if (sizingAlongAxis) {
++                if (parentLayoutConfig->wrapChildren) { Clay__WrapSizeAlongAxis(context, parent, xAxis, &resizableContainerBuffer); continue; } // claygo extension: child wrap
+                 float sizeToDistribute = parentSize - parentPadding - innerContentSize;
+                 // The content is too large, compress the children as much as possible
+                 if (sizeToDistribute < 0) {
+@@ -2491,6 +2523,7 @@
+                 }
+             // Sizing along the non layout axis ("off axis")
+             } else {
++                if (parentLayoutConfig->wrapChildren && Clay__WrapSizeAcrossAxis(context, parent, xAxis, &resizableContainerBuffer)) { continue; } // claygo extension: child wrap
+                 for (int32_t childOffset = 0; childOffset < resizableContainerBuffer.length; childOffset++) {
+                     Clay_LayoutElement *childElement = Clay_LayoutElementArray_Get(&context->layoutElements, Clay__int32_tArray_GetValue(&resizableContainerBuffer, childOffset));
+                     Clay_SizingAxis childSizing = Clay__GetElementSizing(childElement, xAxis);
+@@ -2572,6 +2605,16 @@
+ 
+ void Clay__CalculateFinalLayout(float deltaTime, bool useStoredBoundingBoxes, bool generateRenderCommands) {
+     Clay_Context* context = Clay_GetCurrentContext();
++    // claygo extension: child wrap: fresh line pool per pass. Column wrap needs heights before
++    // it can break, so the x/y sizing sweep below runs a second time when any
++    // TOP_TO_BOTTOM wrap parent exists; row wrap needs one sweep.
++    context->wrapLines.length = 0;
++    context->wrapHasColumn = false;
++    context->wrapColumnLinesValid = false;
++    bool wrapSecondSweepDone = false;
++    int32_t wrapWrappedTextLinesStart = context->wrappedTextLines.length;
++wrapSweepStart:
++    context->wrappedTextLines.length = wrapWrappedTextLinesStart;
+ 
+     // Calculate sizing along the X axis
+     Clay__int32_tArray textElements = context->openClipElementStack;
+@@ -2671,6 +2714,7 @@
+ 
+         // DFS node has been visited, this is on the way back up to the root
+         Clay_LayoutConfig *layoutConfig = &currentElement->config.layout;
++        if (layoutConfig->wrapChildren && layoutConfig->layoutDirection == CLAY_LEFT_TO_RIGHT && currentElement->wrapLines.length > 0) { Clay__WrapUpdateCrossContent(context, currentElement, false, true); continue; } // claygo extension: child wrap
+         if (layoutConfig->layoutDirection == CLAY_LEFT_TO_RIGHT) {
+             // Resize any parent containers that have grown in height along their non layout axis
+             for (int32_t j = 0; j < currentElement->children.length; ++j) {
+@@ -2692,6 +2736,8 @@
+ 
+     // Calculate sizing along the Y axis
+     Clay__SizeContainersAlongAxis(false, deltaTime, NULL, NULL);
++    context->wrapColumnLinesValid = true; // claygo extension: child wrap
++    if (context->wrapHasColumn && !wrapSecondSweepDone) { wrapSecondSweepDone = true; goto wrapSweepStart; } // claygo extension: child wrap
+ 
+     // Scale horizontal widths according to aspect ratio
+     for (int32_t i = 0; i < aspectRatioElements.length; ++i) {
+@@ -2853,6 +2899,7 @@
+                             float halfGap = layoutConfig->childGap / 2;
+                             float halfWidth = borderConfig->width.betweenChildren / 2;
+                             Clay_Vector2 borderOffset = { (float)layoutConfig->padding.left - halfGap, (float)layoutConfig->padding.top - halfGap };
++                            if (layoutConfig->wrapChildren && currentElement->wrapLines.length > 0) { Clay__WrapEmitDividers(context, currentElement, currentElementBoundingBox, scrollOffset); } else // claygo extension: child wrap
+                             if (layoutConfig->layoutDirection == CLAY_LEFT_TO_RIGHT) {
+                                 for (int32_t i = 0; i < currentElement->children.length; ++i) {
+                                     Clay_LayoutElement *childElement = Clay_LayoutElementArray_Get(&context->layoutElements, currentElement->children.elements[i]);
+@@ -3092,6 +3139,8 @@
+ 
+             if (currentElement->isTextElement) continue;
+ 
++            if (layoutConfig->wrapChildren && currentElement->wrapLines.length > 0) { Clay__WrapPositionChildren(context, &dfsBuffer, currentElement, currentElementBoundingBox, scrollOffset, scrollContainerData); continue; } // claygo extension: child wrap
++
+             // Setup positions for child elements and add to DFS buffer ----------
+ 
+             // On-axis alignment
