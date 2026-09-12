@@ -57,6 +57,10 @@ type Context struct {
 	wrapHasColumn        bool
 	wrapColumnLinesValid bool
 
+	// Native clips resolve rectangles after every root has current geometry.
+	clipCommands   Array[clipCommand]
+	clipLayoutPass uint64
+
 	// pointerOverIds is the per-frame list of element ids the pointer is
 	// currently inside, populated by SetPointerState. Higher-z tree roots are
 	// scanned first.
@@ -320,12 +324,14 @@ func (c *Context) allocateEphemeralMemory() {
 	c.layoutElementTreeRoots = NewArray[layoutElementTreeRoot](maxElements, a)
 	c.wrappedTextLines = NewArray[WrappedTextLine](maxElements, a)
 	c.textElements = NewArray[int32](maxElements, a)
-	c.openClipElementStack = NewArray[int32](maxElements, a)
+	// A floating clip owner pushes both inheritance and its own boundary.
+	c.openClipElementStack = NewArray[int32](2*maxElements, a)
 	c.layoutElementClipElementIds = NewArray[int32](maxElements, a)
 	// A line holds at least one child, so one sizing sweep never needs more than
 	// maxElements lines. Twice that, because the second sweep re-packs while the
 	// first sweep's column lines are still in use.
 	c.wrapLines = NewArray[WrapLine](2*maxElements, a)
+	c.clipCommands = NewArray[clipCommand](maxElements, a)
 
 	// Freshly-allocated arrays are already zero, so the first reset has nothing
 	// to clear: no live low-end and an empty clone region.

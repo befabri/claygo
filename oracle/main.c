@@ -14,9 +14,11 @@
 #define CLAY_IMPLEMENTATION
 // The default build compiles the extended header (clay.h + patches/, generated
 // by the Makefile) and knows every scene. -DCLAY_ORACLE_UPSTREAM compiles the
-// verbatim clay.h and only the upstream scenes; `make verify` uses both.
+// verbatim clay.h. CLAY_ORACLE_NATIVE includes only native corrections.
 #ifdef CLAY_ORACLE_UPSTREAM
 #include "clay.h"
+#elif defined(CLAY_ORACLE_NATIVE)
+#include "clay_native.h"
 #else
 #include "clay_ext.h"
 #endif
@@ -47,6 +49,9 @@ static Clay_Dimensions measure_text(Clay_StringSlice text, Clay_TextElementConfi
 static void error_handler(Clay_ErrorData err) {
     fprintf(stderr, "[clay error] type=%d %.*s\n", (int)err.errorType,
             err.errorText.length, err.errorText.chars);
+    // Corpus scenes must complete without engine errors. Do not emit a
+    // plausible golden after a failed declaration, allocation, or layout.
+    exit(EXIT_FAILURE);
 }
 
 // ---------------------------------------------------------------------------
@@ -1011,6 +1016,156 @@ static Clay_RenderCommandArray scene_border_between_children_odd_gap(void) {
 }
 
 #ifndef CLAY_ORACLE_UPSTREAM
+// Native corrections have their own corpus and compile without extensions.
+static void clip_expect_hit(Clay_ElementId id, Clay_Vector2 point, bool expected) {
+    Clay_SetPointerState(point, false);
+    if (Clay_PointerOver(id) != expected) {
+        fprintf(stderr, "clip pointer mismatch for %u at (%g, %g)\n", id.id, point.x, point.y);
+        exit(1);
+    }
+}
+
+static bool clip_keep_transition(Clay_TransitionCallbackArguments args) { return false; }
+
+static Clay_TransitionData clip_exit(Clay_TransitionData state, Clay_TransitionProperty properties) { return state; }
+
+static Clay_RenderCommandArray scene_native_clip_ancestors(void) {
+    Clay_BeginLayout();
+    CLAY(CLAY_ID("outer"), {
+        .layout = {.sizing = {CLAY_SIZING_FIXED(30), CLAY_SIZING_FIXED(100)}}, .clip = {.horizontal = true},
+    }) {
+        CLAY(CLAY_ID("inner"), {
+            .layout = {.sizing = {CLAY_SIZING_FIXED(100), CLAY_SIZING_FIXED(20)}}, .clip = {.vertical = true},
+        }) {
+            CLAY(CLAY_ID("front"), {
+                .layout = {.sizing = {CLAY_SIZING_FIXED(100), CLAY_SIZING_FIXED(100)}},
+                .backgroundColor = {200, 80, 80, 255},
+                .floating = {.attachTo = CLAY_ATTACH_TO_PARENT, .clipTo = CLAY_CLIP_TO_ATTACHED_PARENT},
+            });
+        }
+    }
+    Clay_RenderCommandArray commands = Clay_EndLayout(0);
+    clip_expect_hit(CLAY_ID("front"), (Clay_Vector2){10, 10}, true);
+    clip_expect_hit(CLAY_ID("front"), (Clay_Vector2){50, 10}, false);
+    clip_expect_hit(CLAY_ID("front"), (Clay_Vector2){10, 50}, false);
+    return commands;
+}
+
+static Clay_RenderCommandArray scene_native_clip_owned_sibling(void) {
+    Clay_BeginLayout();
+    CLAY(CLAY_ID("viewport"), {
+        .layout = {.sizing = {CLAY_SIZING_FIXED(100), CLAY_SIZING_FIXED(30)}}, .clip = {.vertical = true},
+    }) {
+        CLAY(CLAY_ID("owned"), {
+            .layout = {.sizing = {CLAY_SIZING_FIXED(20), CLAY_SIZING_FIXED(20)}}, .clip = {.horizontal = true},
+            .floating = {.attachTo = CLAY_ATTACH_TO_PARENT, .clipTo = CLAY_CLIP_TO_ATTACHED_PARENT},
+        });
+        CLAY(CLAY_ID("sibling"), {
+            .layout = {.sizing = {CLAY_SIZING_FIXED(80), CLAY_SIZING_FIXED(20)}},
+            .backgroundColor = {200, 80, 80, 255},
+            .floating = {.attachTo = CLAY_ATTACH_TO_PARENT, .clipTo = CLAY_CLIP_TO_ATTACHED_PARENT},
+        });
+    }
+    Clay_RenderCommandArray commands = Clay_EndLayout(0);
+    clip_expect_hit(CLAY_ID("sibling"), (Clay_Vector2){50, 10}, true);
+    return commands;
+}
+
+static Clay_RenderCommandArray scene_native_clip_offscreen(void) {
+    Clay_BeginLayout();
+    CLAY(CLAY_ID("viewport"), {
+        .layout = {.sizing = {CLAY_SIZING_FIXED(100), CLAY_SIZING_FIXED(30)}},
+        .floating = {.attachTo = CLAY_ATTACH_TO_ROOT, .offset = {2000, 0}},
+        .clip = {.vertical = true, .childOffset = {-2000, 0}},
+    }) {
+        CLAY(CLAY_ID("child"), {
+            .layout = {.sizing = {CLAY_SIZING_FIXED(100), CLAY_SIZING_FIXED(100)}},
+            .backgroundColor = {200, 80, 80, 255},
+        });
+    }
+    Clay_RenderCommandArray commands = Clay_EndLayout(0);
+    clip_expect_hit(CLAY_ID("child"), (Clay_Vector2){10, 10}, true);
+    clip_expect_hit(CLAY_ID("child"), (Clay_Vector2){10, 50}, false);
+    return commands;
+}
+
+static Clay_RenderCommandArray scene_native_clip_culled(void) {
+    Clay_RenderCommandArray commands = {0};
+    // The two shapes retain 63 distinct scroll-container IDs across frames,
+    // within upstream C's fixed 100 slots. Go separately stress-tests 3,000.
+    const int clip_count = 32;
+    for (int nested = 0; nested < 2; nested++) {
+        Clay_BeginLayout();
+        CLAY(CLAY_ID("offscreen"), {
+            .layout = {.sizing = {CLAY_SIZING_FIXED(100), CLAY_SIZING_FIXED(100)}},
+            .floating = {.attachTo = CLAY_ATTACH_TO_ROOT, .offset = {2000, 0}},
+        }) {
+            for (int i = 0; i < clip_count; i++) {
+                Clay__OpenElement();
+                Clay__ConfigureOpenElement((Clay_ElementDeclaration){
+                    .layout = {.sizing = {CLAY_SIZING_FIXED(100), CLAY_SIZING_FIXED(10)}},
+                    .clip = {.horizontal = true, .vertical = true},
+                });
+                if (!nested) Clay__CloseElement();
+            }
+            if (nested) for (int i = 0; i < clip_count; i++) Clay__CloseElement();
+        }
+        CLAY(CLAY_ID("visible"), {
+            .layout = {.sizing = {CLAY_SIZING_FIXED(20), CLAY_SIZING_FIXED(20)}},
+            .backgroundColor = {1, 2, 3, 255}, .floating = {.attachTo = CLAY_ATTACH_TO_ROOT},
+        });
+        commands = Clay_EndLayout(0);
+        if (commands.length != 1) {
+            fprintf(stderr, "fully culled clips consumed render capacity: %d commands\n", commands.length);
+            exit(1);
+        }
+    }
+    return commands;
+}
+
+static Clay_RenderCommandArray scene_native_clip_exit(void) {
+    Clay_RenderCommandArray commands = {0};
+    for (int frame = 0; frame < 3; frame++) {
+        Clay_BeginLayout();
+        CLAY(CLAY_ID("outer"), {
+            .layout = {.sizing = {CLAY_SIZING_FIXED(100), CLAY_SIZING_FIXED(60)}}, .clip = {.vertical = true},
+        }) {
+            CLAY(CLAY_ID("viewport"), {
+                .layout = {.sizing = {CLAY_SIZING_FIXED(30), CLAY_SIZING_FIXED(100)}}, .clip = {.horizontal = frame < 2},
+            }) {
+                if (!frame) {
+                    CLAY(CLAY_ID("exiting"), {
+                        .layout = {.sizing = {CLAY_SIZING_FIXED(100), CLAY_SIZING_FIXED(100)}},
+                        .backgroundColor = {200, 80, 80, 255},
+                        .floating = {.attachTo = CLAY_ATTACH_TO_PARENT, .clipTo = CLAY_CLIP_TO_ATTACHED_PARENT},
+                        .transition = {.handler = clip_keep_transition, .duration = 1, .properties = CLAY_TRANSITION_PROPERTY_X,
+                                       .exit = {.setFinalState = clip_exit}},
+                    });
+                }
+            }
+        }
+        commands = Clay_EndLayout(0);
+    }
+    int starts = 0;
+    for (int i = 0; i < commands.length; i++) {
+        Clay_RenderCommand command = commands.internalArray[i];
+        if (command.commandType != CLAY_RENDER_COMMAND_TYPE_SCISSOR_START) continue;
+        starts++;
+        if (command.renderData.clip.horizontal || !command.renderData.clip.vertical || command.boundingBox.height != 60) {
+            fprintf(stderr, "exit retained a disabled clip instead of the active outer viewport\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+    if (starts != 2) {
+        fprintf(stderr, "exit lost the outer viewport's owned or inherited clip\n");
+        exit(EXIT_FAILURE);
+    }
+    return commands;
+}
+
+#endif
+
+#if !defined(CLAY_ORACLE_UPSTREAM) && !defined(CLAY_ORACLE_NATIVE)
 // ---------------------------------------------------------------------------
 // Extension scenes: claygo child wrap (layout.wrapChildren)
 // ---------------------------------------------------------------------------
@@ -1719,6 +1874,13 @@ static Scene SCENES[] = {
     { "exit_single_completed",      scene_exit_single_completed      },
     { "border_between_children_odd_gap", scene_border_between_children_odd_gap },
 #ifndef CLAY_ORACLE_UPSTREAM
+    { "native_clip_ancestors", scene_native_clip_ancestors },
+    { "native_clip_owned_sibling", scene_native_clip_owned_sibling },
+    { "native_clip_offscreen", scene_native_clip_offscreen },
+    { "native_clip_exit", scene_native_clip_exit },
+    { "native_clip_culled", scene_native_clip_culled },
+#endif
+#if !defined(CLAY_ORACLE_UPSTREAM) && !defined(CLAY_ORACLE_NATIVE)
     { "ext_wrap_rows_basic",              scene_ext_wrap_rows_basic              },
     { "ext_wrap_rows_single_line",        scene_ext_wrap_rows_single_line        },
     { "ext_wrap_rows_grow",               scene_ext_wrap_rows_grow               },
@@ -1760,8 +1922,20 @@ static void run_scene(Scene s) {
 }
 
 int main(int argc, char **argv) {
+    // Allow capacity failures to be reproduced through a real scene, including
+    // in tests of the oracle's fatal error handling. Applies to every build.
+    if (argc >= 4 && strcmp(argv[1], "--max-elements") == 0) {
+        char *end;
+        long capacity = strtol(argv[2], &end, 10);
+        if (!argv[2][0] || *end || capacity < 2 || capacity > INT32_MAX) {
+            fprintf(stderr, "--max-elements requires an integer between 2 and %d\n", INT32_MAX);
+            return 2;
+        }
+        Clay_SetMaxElementCount((int32_t)capacity);
+        argv += 2; argc -= 2;
+    }
     if (argc < 2) {
-        fprintf(stderr, "usage: %s <scene-name>\n   or: %s --list\n", argv[0], argv[0]);
+        fprintf(stderr, "usage: %s [--max-elements N] <scene-name>\n   or: %s --list\n", argv[0], argv[0]);
         return 2;
     }
     if (strcmp(argv[1], "--list") == 0) {

@@ -46,6 +46,11 @@ type LayoutElement struct {
 	// when Config.Layout.WrapChildren is set. Every layout pass repacks the
 	// pool, so a view held across passes goes stale.
 	WrapLines ArraySlice[WrapLine]
+
+	// Native ancestry survives exit snapshots; the pass stamp distinguishes
+	// current geometry from completed transitions skipped by final layout.
+	clipAncestorID uint32
+	clipLayoutPass uint64
 }
 
 // TextElementData is the per-text-leaf bookkeeping. Mirrors

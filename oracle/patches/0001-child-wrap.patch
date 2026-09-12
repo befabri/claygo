@@ -45,17 +45,17 @@ it with current line numbers and context. See oracle/UPSTREAM.md
  typedef struct {
      Clay_String text;
      Clay_Dimensions preferredDimensions;
-@@ -1226,6 +1243,9 @@
+@@ -1230,6 +1247,9 @@
      // True if the element is currently in an exit transition, and is "synthetic"
      // i.e. data was retained from previous frames
      bool exiting;
 +    // claygo extension: child wrap: lines packed for this element when
 +    // config.layout.wrapChildren is set. A view into Clay_Context.wrapLines.
 +    Clay__WrapLineArraySlice wrapLines;
+     uint32_t clipAncestorId; // claygo native fix: clipping, native ancestry.
+     uint64_t clipLayoutPass; // claygo native fix: clipping, current geometry.
  } Clay_LayoutElement;
- 
- CLAY__ARRAY_DEFINE(Clay_LayoutElement, Clay_LayoutElementArray)
-@@ -1360,6 +1380,10 @@
+@@ -1367,6 +1387,10 @@
      Clay__StringArray layoutElementIdStrings;
      Clay__WrappedTextLineArray wrappedTextLines;
      Clay__LayoutElementTreeNodeArray layoutElementTreeNodeArray1;
@@ -66,7 +66,7 @@ it with current line numbers and context. See oracle/UPSTREAM.md
      Clay__LayoutElementTreeRootArray layoutElementTreeRoots;
      Clay__LayoutElementHashMapItemArray layoutElementsHashMapInternal;
      Clay__int32_tArray layoutElementsHashMap;
-@@ -1781,6 +1805,9 @@
+@@ -1791,6 +1815,9 @@
      return point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height;
  }
  
@@ -76,7 +76,7 @@ it with current line numbers and context. See oracle/UPSTREAM.md
  Clay_LayoutElementHashMapItem* Clay__AddHashMapItem(Clay_ElementId elementId, Clay_LayoutElement* layoutElement) {
      Clay_Context* context = Clay_GetCurrentContext();
      if (context->layoutElementsHashMapInternal.length == context->layoutElementsHashMapInternal.capacity - 1) {
-@@ -1929,6 +1956,7 @@
+@@ -1944,6 +1971,7 @@
          }
      }
  
@@ -84,7 +84,7 @@ it with current line numbers and context. See oracle/UPSTREAM.md
      context->layoutElementChildrenBuffer.length -= openLayoutElement->children.length;
  
      // Clamp element min and max width to the values configured in the layout
-@@ -2229,6 +2257,7 @@
+@@ -2248,6 +2276,7 @@
  
      context->layoutElementIdStrings = Clay__StringArray_Allocate_Arena(maxElementCount, arena);
      context->wrappedTextLines = Clay__WrappedTextLineArray_Allocate_Arena(maxElementCount, arena);
@@ -92,7 +92,7 @@ it with current line numbers and context. See oracle/UPSTREAM.md
      context->layoutElementTreeNodeArray1 = Clay__LayoutElementTreeNodeArray_Allocate_Arena(maxElementCount, arena);
      context->layoutElementTreeRoots = Clay__LayoutElementTreeRootArray_Allocate_Arena(maxElementCount, arena);
      context->layoutElementChildren = Clay__int32_tArray_Allocate_Arena(maxElementCount, arena);
-@@ -2277,6 +2306,8 @@
+@@ -2298,6 +2327,8 @@
      }
  }
  
@@ -101,7 +101,7 @@ it with current line numbers and context. See oracle/UPSTREAM.md
  // Writes out the location of text elements to layout elements buffer 1
  void Clay__SizeContainersAlongAxis(bool xAxis, float deltaTime, Clay__int32_tArray* textElementsOut, Clay__int32_tArray* aspectRatioElementsOut) {
      Clay_Context* context = Clay_GetCurrentContext();
-@@ -2332,6 +2363,7 @@
+@@ -2353,6 +2384,7 @@
              Clay_LayoutElement *parent = Clay_LayoutElementArray_Get(&context->layoutElements, parentIndex);
              Clay_LayoutConfig *parentLayoutConfig = &parent->config.layout;
              int32_t growContainerCount = 0;
@@ -109,7 +109,7 @@ it with current line numbers and context. See oracle/UPSTREAM.md
              float parentSize = xAxis ? parent->dimensions.width : parent->dimensions.height;
              float parentPadding = (float)(xAxis ? (parentLayoutConfig->padding.left + parentLayoutConfig->padding.right) : (parentLayoutConfig->padding.top + parentLayoutConfig->padding.bottom));
              float innerContentSize = 0, totalPaddingAndChildGaps = parentPadding;
-@@ -2400,6 +2432,7 @@
+@@ -2421,6 +2453,7 @@
              }
  
              if (sizingAlongAxis) {
@@ -117,7 +117,7 @@ it with current line numbers and context. See oracle/UPSTREAM.md
                  float sizeToDistribute = parentSize - parentPadding - innerContentSize;
                  // The content is too large, compress the children as much as possible
                  if (sizeToDistribute < 0) {
-@@ -2491,6 +2524,7 @@
+@@ -2512,6 +2545,7 @@
                  }
              // Sizing along the non layout axis ("off axis")
              } else {
@@ -125,10 +125,10 @@ it with current line numbers and context. See oracle/UPSTREAM.md
                  for (int32_t childOffset = 0; childOffset < resizableContainerBuffer.length; childOffset++) {
                      Clay_LayoutElement *childElement = Clay_LayoutElementArray_Get(&context->layoutElements, Clay__int32_tArray_GetValue(&resizableContainerBuffer, childOffset));
                      Clay_SizingAxis childSizing = Clay__GetElementSizing(childElement, xAxis);
-@@ -2572,6 +2606,16 @@
- 
+@@ -2594,6 +2628,16 @@
  void Clay__CalculateFinalLayout(float deltaTime, bool useStoredBoundingBoxes, bool generateRenderCommands) {
      Clay_Context* context = Clay_GetCurrentContext();
+     Clay__ClipBeginLayout(); // claygo native fix: clipping
 +    // claygo extension: child wrap: fresh line pool per pass. Column wrap needs heights before
 +    // it can break, so the x/y sizing sweep below runs a second time when any
 +    // TOP_TO_BOTTOM wrap parent exists; row wrap needs one sweep.
@@ -142,7 +142,7 @@ it with current line numbers and context. See oracle/UPSTREAM.md
  
      // Calculate sizing along the X axis
      Clay__int32_tArray textElements = context->openClipElementStack;
-@@ -2671,6 +2715,7 @@
+@@ -2693,6 +2737,7 @@
  
          // DFS node has been visited, this is on the way back up to the root
          Clay_LayoutConfig *layoutConfig = &currentElement->config.layout;
@@ -150,7 +150,7 @@ it with current line numbers and context. See oracle/UPSTREAM.md
          if (layoutConfig->layoutDirection == CLAY_LEFT_TO_RIGHT) {
              // Resize any parent containers that have grown in height along their non layout axis
              for (int32_t j = 0; j < currentElement->children.length; ++j) {
-@@ -2692,6 +2737,8 @@
+@@ -2714,6 +2759,8 @@
  
      // Calculate sizing along the Y axis
      Clay__SizeContainersAlongAxis(false, deltaTime, NULL, NULL);
@@ -159,7 +159,7 @@ it with current line numbers and context. See oracle/UPSTREAM.md
  
      // Scale horizontal widths according to aspect ratio
      for (int32_t i = 0; i < aspectRatioElements.length; ++i) {
-@@ -2853,6 +2900,7 @@
+@@ -2858,6 +2905,7 @@
                              float halfGap = layoutConfig->childGap / 2;
                              float halfWidth = borderConfig->width.betweenChildren / 2;
                              Clay_Vector2 borderOffset = { (float)layoutConfig->padding.left - halfGap, (float)layoutConfig->padding.top - halfGap };
@@ -167,7 +167,7 @@ it with current line numbers and context. See oracle/UPSTREAM.md
                              if (layoutConfig->layoutDirection == CLAY_LEFT_TO_RIGHT) {
                                  for (int32_t i = 0; i < currentElement->children.length; ++i) {
                                      Clay_LayoutElement *childElement = Clay_LayoutElementArray_Get(&context->layoutElements, currentElement->children.elements[i]);
-@@ -3092,6 +3140,8 @@
+@@ -3106,6 +3154,8 @@
  
              if (currentElement->isTextElement) continue;
  

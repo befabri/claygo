@@ -78,17 +78,8 @@ func (c *Context) collectPointerOver(rootIdx int32) bool {
 		if c.skipPointerTree(element) {
 			continue
 		}
-		clipElementID := int32(0)
-		if idx >= 0 && idx < c.layoutElementClipElementIds.Capacity {
-			clipElementID = c.layoutElementClipElementIds.Data[idx]
-		}
-		clipAllowsHit := clipElementID == 0 || c.externalScrollHandlingEnabled
-		if !clipAllowsHit {
-			if clipItem := c.getHashMapItem(uint32(clipElementID)); clipItem != nil {
-				clipAllowsHit = pointIsInsideRect(c.pointerPosition, clipItem.BoundingBox)
-			}
-		}
-		if pointIsInsideRect(c.pointerPosition, item.BoundingBox) && clipAllowsHit {
+		if pointIsInsideRect(c.pointerPosition, item.BoundingBox) &&
+			(c.externalScrollHandlingEnabled || c.pointerWithinNativeClips(element.clipAncestorID)) {
 			if item.OnHoverFunction != nil {
 				item.OnHoverFunction(item.ElementID, c.pointerData, item.HoverFunctionUserData)
 			}

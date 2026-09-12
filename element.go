@@ -89,6 +89,7 @@ func (c *Context) recordClipAncestor(idx int32) {
 	} else {
 		c.layoutElementClipElementIds.Data[idx] = 0
 	}
+	c.layoutElements.Get(idx).clipAncestorID = uint32(c.layoutElementClipElementIds.Data[idx])
 }
 
 // openTextElement appends a text-leaf LayoutElement. Text elements have no
@@ -116,6 +117,7 @@ func (c *Context) openTextElement(text string, cfg TextElementConfig) {
 	elementID := HashNumber(offset, parent.ID)
 	textElement.ID = elementID.ID
 	c.addHashMapItem(elementID, textElement)
+	c.recordClipAncestor(newIdx)
 
 	height := measured.UnwrappedDimensions.Height
 	if cfg.LineHeight > 0 {
@@ -165,21 +167,12 @@ func (c *Context) configureOpenElement(decl Decl) {
 					clipElementID = c.openClipElementStack.GetValue(c.openClipElementStack.Length - 1)
 				}
 			case AttachToElementWithID:
-				parentItem := c.getHashMapItem(floatingCfg.ParentID)
+				parentItem := c.clipElement(floatingCfg.ParentID)
 				if parentItem == nil {
 					c.reportError(ErrorTypeFloatingContainerParentNotFound,
 						"A floating element was declared with a parentId, but no element with that ID was found this frame. The parent must be declared (via BoxID with that string id) earlier in the same frame, before the floating element opens.")
-				} else if parentItem.LayoutElement != nil {
-					// Find the parent's index by pointer-walking layoutElements;
-					// parentItem.LayoutElement points into that backing array.
-					for i := range c.layoutElements.Length {
-						if c.layoutElements.Get(i) == parentItem.LayoutElement {
-							if i < c.layoutElementClipElementIds.Length {
-								clipElementID = c.layoutElementClipElementIds.Data[i]
-							}
-							break
-						}
-					}
+				} else {
+					clipElementID = int32(parentItem.LayoutElement.clipAncestorID)
 				}
 			case AttachToRoot:
 				floatingCfg.ParentID = HashString(String{Text: rootElementIDString}, 0).ID
@@ -196,12 +189,9 @@ func (c *Context) configureOpenElement(decl Decl) {
 			if currentElementIndex < c.layoutElementClipElementIds.Capacity {
 				c.layoutElementClipElementIds.Data[currentElementIndex] = clipElementID
 			}
-			// Push the resolved clipElementID onto openClipElementStack so
-			// closeElement's matching pop (which fires for any floating
-			// element OR clip owner) balances. Mirrors C clay.h:2153.
-			// Without this push, a floating element nested in a real clip
-			// would corrupt the stack on close by popping the real clip's
-			// entry instead of its own.
+			openLE.clipAncestorID = uint32(clipElementID)
+			// Floating inheritance has its own stack entry, even when disabled.
+			// closeElement pops it independently from any owned clip.
 			c.openClipElementStack.Add(clipElementID)
 			c.layoutElementTreeRoots.Add(layoutElementTreeRoot{
 				LayoutElementIndex: currentElementIndex,
@@ -254,10 +244,14 @@ func (c *Context) closeElement() {
 	elementHasClipHorizontal := openLE.Config.Clip.Horizontal
 	elementHasClipVertical := openLE.Config.Clip.Vertical
 
-	// Pop openClipElementStack for clip-owners or floating roots. Mirrors
-	// the C check at oracle/clay.h:1876.
-	if elementHasClipHorizontal || elementHasClipVertical ||
-		openLE.Config.Floating.AttachTo != AttachToNone {
+	// Floating inheritance and an owned clip push independently. Balance both
+	// when an element has both, so its clip cannot leak to later siblings.
+	if elementHasClipHorizontal || elementHasClipVertical {
+		if c.openClipElementStack.Length > 0 {
+			c.openClipElementStack.Length--
+		}
+	}
+	if openLE.Config.Floating.AttachTo != AttachToNone {
 		if c.openClipElementStack.Length > 0 {
 			c.openClipElementStack.Length--
 		}

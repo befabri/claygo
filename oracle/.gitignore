@@ -1,4 +1,7 @@
 oracle
 oracle-upstream
+oracle-native
+clay_native.h
+clay_native.h.*
 clay_ext.h
 clay_ext.h.*

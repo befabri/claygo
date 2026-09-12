@@ -438,6 +438,7 @@ func (c *Context) cloneElementsWithExitTransition() {
 			c.layoutElementTreeRoots.Add(layoutElementTreeRoot{
 				LayoutElementIndex: rootCloneIdx,
 				ParentID:           rootClone.Config.Floating.ParentID,
+				ClipElementID:      rootClone.clipAncestorID,
 				ZIndex:             rootClone.Config.Floating.ZIndex,
 			})
 		}

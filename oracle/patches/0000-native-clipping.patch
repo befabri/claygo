@@ -1,0 +1,249 @@
+claygo native fix: clipping (oracle/UPSTREAM.md, Native corrections).
+
+Generated with rebase-patch.sh; edit the C work file, not the hunks.
+
+--- a/clay.h
++++ b/clay.h
+@@ -1209,6 +1209,10 @@
+     uint16_t length;
+ } Clay__LayoutElementChildren;
+ 
++// claygo native fix: clipping. Deferred rectangles for inherited native clips.
++typedef struct { uint32_t elementId; int32_t index; } Clay__ClipCommand;
++CLAY__ARRAY_DEFINE(Clay__ClipCommand, Clay__ClipCommandArray)
++
+ typedef struct Clay_LayoutElement {
+     Clay__LayoutElementChildren children;
+     Clay_Dimensions dimensions;
+@@ -1226,6 +1230,8 @@
+     // True if the element is currently in an exit transition, and is "synthetic"
+     // i.e. data was retained from previous frames
+     bool exiting;
++    uint32_t clipAncestorId; // claygo native fix: clipping, native ancestry.
++    uint64_t clipLayoutPass; // claygo native fix: clipping, current geometry.
+ } Clay_LayoutElement;
+ 
+ CLAY__ARRAY_DEFINE(Clay_LayoutElement, Clay_LayoutElementArray)
+@@ -1310,6 +1316,7 @@
+     Clay_Vector2 position;
+     Clay_Vector2 nextChildOffset;
+     bool parentMovedThisFramed; // Used to relativise transitions
++    bool clipPending; // claygo native fix: clipping, defer offscreen owners.
+ } Clay__LayoutElementTreeNode;
+ 
+ CLAY__ARRAY_DEFINE(Clay__LayoutElementTreeNode, Clay__LayoutElementTreeNodeArray)
+@@ -1375,6 +1382,9 @@
+     Clay__TransitionDataInternalArray transitionDatas;
+     Clay__boolArray treeNodeVisited;
+     Clay__charArray dynamicStringData;
++    // claygo native fix: clipping.
++    Clay__ClipCommandArray clipCommands;
++    uint64_t clipLayoutPass;
+ };
+ 
+ Clay_Context* Clay__Context_Allocate_Arena(Clay_Arena *arena) {
+@@ -1864,6 +1874,8 @@
+     }
+ }
+ 
++#include "patches/native-clipping.h" // claygo native fix: clipping
++
+ void Clay__CloseElement(void) {
+     Clay_Context* context = Clay_GetCurrentContext();
+     if (context->booleanWarnings.maxElementsExceeded) {
+@@ -1873,7 +1885,10 @@
+     Clay_LayoutConfig *layoutConfig = &openLayoutElement->config.layout;
+     bool elementHasClipHorizontal = openLayoutElement->config.clip.horizontal;
+     bool elementHasClipVertical = openLayoutElement->config.clip.vertical;
+-    if (elementHasClipHorizontal || elementHasClipVertical || openLayoutElement->config.floating.attachTo != CLAY_ATTACH_TO_NONE) {
++    if (elementHasClipHorizontal || elementHasClipVertical) { // claygo native fix: clipping, balance owned and inherited pushes independently.
++        context->openClipElementStack.length--;
++    }
++    if (openLayoutElement->config.floating.attachTo != CLAY_ATTACH_TO_NONE) { // claygo native fix: clipping
+         context->openClipElementStack.length--;
+     }
+ 
+@@ -2059,6 +2074,7 @@
+     } else {
+         Clay__int32_tArray_Set(&context->layoutElementClipElementIds, context->layoutElements.length - 1, 0);
+     }
++    openLayoutElement->clipAncestorId = Clay__int32_tArray_GetValue(&context->layoutElementClipElementIds, context->layoutElements.length - 1); // claygo native fix: clipping
+ }
+ 
+ void Clay__OpenElementWithId(Clay_ElementId elementId) {
+@@ -2078,6 +2094,7 @@
+     } else {
+         Clay__int32_tArray_Set(&context->layoutElementClipElementIds, context->layoutElements.length - 1, 0);
+     }
++    openLayoutElement->clipAncestorId = Clay__int32_tArray_GetValue(&context->layoutElementClipElementIds, context->layoutElements.length - 1); // claygo native fix: clipping
+ }
+ 
+ void Clay__OpenTextElement(Clay_String text, Clay_TextElementConfig textConfig) {
+@@ -2095,6 +2112,7 @@
+     } else {
+         Clay__int32_tArray_Set(&context->layoutElementClipElementIds, context->layoutElements.length - 1, 0);
+     }
++    textElement->clipAncestorId = Clay__int32_tArray_GetValue(&context->layoutElementClipElementIds, context->layoutElements.length - 1); // claygo native fix: clipping
+ 
+     Clay__int32_tArray_Add(&context->layoutElementChildrenBuffer, context->layoutElements.length - 1);
+     Clay__MeasureTextCacheItem *textMeasured = Clay__MeasureTextCached(&text, &textConfig);
+@@ -2133,14 +2151,14 @@
+                     clipElementId = Clay__int32_tArray_GetValue(&context->openClipElementStack, (int)context->openClipElementStack.length - 1);
+                 }
+             } else if (declaration->floating.attachTo == CLAY_ATTACH_TO_ELEMENT_WITH_ID) {
+-                Clay_LayoutElementHashMapItem *parentItem = Clay__GetHashMapItem(floatingConfig->parentId);
+-                if (parentItem == &Clay_LayoutElementHashMapItem_DEFAULT) {
++                Clay_LayoutElementHashMapItem *parentItem = Clay__ClipElement(floatingConfig->parentId); // claygo native fix: clipping, current declarations only.
++                if (!parentItem) { // claygo native fix: clipping
+                     context->errorHandler.errorHandlerFunction(CLAY__INIT(Clay_ErrorData) {
+                             .errorType = CLAY_ERROR_TYPE_FLOATING_CONTAINER_PARENT_NOT_FOUND,
+                             .errorText = CLAY_STRING("A floating element was declared with a parentId, but no element with that ID was found."),
+                             .userData = context->errorHandler.userData });
+                 } else {
+-                    clipElementId = Clay__int32_tArray_GetValue(&context->layoutElementClipElementIds, (int32_t)(parentItem->layoutElement - context->layoutElements.internalArray));
++                    clipElementId = parentItem->layoutElement->clipAncestorId; // claygo native fix: clipping
+                 }
+             } else if (declaration->floating.attachTo == CLAY_ATTACH_TO_ROOT) {
+                 floatingConfig->parentId = Clay__HashString(CLAY_STRING("Clay__RootContainer"), 0).id;
+@@ -2150,6 +2168,7 @@
+             }
+             int32_t currentElementIndex = Clay__int32_tArray_GetValue(&context->openLayoutElementStack, context->openLayoutElementStack.length - 1);
+             Clay__int32_tArray_Set(&context->layoutElementClipElementIds, currentElementIndex, clipElementId);
++            openLayoutElement->clipAncestorId = clipElementId; // claygo native fix: clipping
+             Clay__int32_tArray_Add(&context->openClipElementStack, clipElementId);
+             Clay__LayoutElementTreeRootArray_Add(&context->layoutElementTreeRoots, CLAY__INIT(Clay__LayoutElementTreeRoot) {
+                 .layoutElementIndex = Clay__int32_tArray_GetValue(&context->openLayoutElementStack, context->openLayoutElementStack.length - 1),
+@@ -2236,7 +2255,7 @@
+     context->renderCommands = Clay_RenderCommandArray_Allocate_Arena(maxElementCount, arena);
+     context->treeNodeVisited = Clay__boolArray_Allocate_Arena(maxElementCount, arena);
+     context->treeNodeVisited.length = context->treeNodeVisited.capacity; // This array is accessed directly rather than behaving as a list
+-    context->openClipElementStack = Clay__int32_tArray_Allocate_Arena(maxElementCount, arena);
++    context->openClipElementStack = Clay__int32_tArray_Allocate_Arena(2 * maxElementCount, arena); // claygo native fix: clipping, two pushes per floating clip owner.
+     context->reusableElementIndexBuffer = Clay__int32_tArray_Allocate_Arena(maxElementCount, arena);
+     context->layoutElementClipElementIds = Clay__int32_tArray_Allocate_Arena(maxElementCount, arena);
+     context->dynamicStringData = Clay__charArray_Allocate_Arena(maxElementCount, arena);
+@@ -2259,6 +2278,8 @@
+     context->measureTextHashMap = Clay__int32_tArray_Allocate_Arena(maxElementCount, arena);
+     context->measuredWords = Clay__MeasuredWordArray_Allocate_Arena(maxMeasureTextCacheWordCount, arena);
+     context->pointerOverIds = Clay_ElementIdArray_Allocate_Arena(maxElementCount, arena);
++    // claygo native fix: clipping, deferred command storage.
++    context->clipCommands = Clay__ClipCommandArray_Allocate_Arena(maxElementCount, arena);
+     context->arenaResetOffset = arena->nextAllocation;
+ }
+ 
+@@ -2572,6 +2593,7 @@
+ 
+ void Clay__CalculateFinalLayout(float deltaTime, bool useStoredBoundingBoxes, bool generateRenderCommands) {
+     Clay_Context* context = Clay_GetCurrentContext();
++    Clay__ClipBeginLayout(); // claygo native fix: clipping
+ 
+     // Calculate sizing along the X axis
+     Clay__int32_tArray textElements = context->openClipElementStack;
+@@ -2778,32 +2800,11 @@
+             targetAttachPosition.y += config->offset.y;
+             rootPosition = targetAttachPosition;
+         }
+-        if (root->clipElementId) {
+-            Clay_LayoutElementHashMapItem *clipHashMapItem = Clay__GetHashMapItem(root->clipElementId);
+-            if (clipHashMapItem && !Clay__ElementIsOffscreen(&clipHashMapItem->boundingBox)) {
+-                // Floating elements that are attached to scrolling contents won't be correctly positioned if external scroll handling is enabled, fix here
+-                if (context->externalScrollHandlingEnabled) {
+-                    if (clipHashMapItem->layoutElement->config.clip.horizontal) {
+-                        rootPosition.x += clipHashMapItem->layoutElement->config.clip.childOffset.x;
+-                    }
+-                    if (clipHashMapItem->layoutElement->config.clip.vertical) {
+-                        rootPosition.y += clipHashMapItem->layoutElement->config.clip.childOffset.y;
+-                    }
+-                }
+-                if (generateRenderCommands) {
+-                    Clay__AddRenderCommand(CLAY__INIT(Clay_RenderCommand) {
+-                        .boundingBox = clipHashMapItem->boundingBox,
+-                        .userData = 0,
+-                        .id = Clay__HashNumber(rootElement->id, rootElement->children.length + 10).id, // TODO need a better strategy for managing derived ids
+-                        .zIndex = root->zIndex,
+-                        .commandType = CLAY_RENDER_COMMAND_TYPE_SCISSOR_START,
+-                    });
+-                }
+-            }
+-        }
++        uint32_t clipCount = Clay__ClipBeginNativeRoot(rootElement, root, &rootPosition, generateRenderCommands); // claygo native fix: clipping
+         Clay__LayoutElementTreeNodeArray_Add(&dfsBuffer, CLAY__INIT(Clay__LayoutElementTreeNode) { .layoutElement = rootElement, .position = rootPosition, .nextChildOffset = { .x = (float)rootElement->config.layout.padding.left, .y = (float)rootElement->config.layout.padding.top } });
+ 
+         context->treeNodeVisited.internalArray[0] = false;
++        int32_t pendingOwnedClipCount = 0; // claygo native fix: clipping
+         while (dfsBuffer.length > 0) {
+             Clay__LayoutElementTreeNode *currentElementTreeNode = Clay__LayoutElementTreeNodeArray_Get(&dfsBuffer, (int)dfsBuffer.length - 1);
+             Clay_LayoutElement *currentElement = currentElementTreeNode->layoutElement;
+@@ -2817,6 +2818,10 @@
+                     continue;
+                 }
+                 Clay_LayoutElementHashMapItem *currentElementData = Clay__GetHashMapItem(currentElement->id);
++                if (generateRenderCommands && Clay__ElementIsOffscreen(&currentElementData->boundingBox)) { // claygo native fix: clipping
++                    if (currentElementTreeNode->clipPending) pendingOwnedClipCount--;
++                    else Clay__ClipEndOwned(currentElement, rootElement->children.length);
++                }
+                 if (generateRenderCommands && !Clay__ElementIsOffscreen(&currentElementData->boundingBox)) {
+                     // DFS is returning upwards backwards
+                     bool closeClipElement = false;
+@@ -2963,10 +2968,19 @@
+                 }
+             }
+ 
++            currentElement->clipLayoutPass = context->clipLayoutPass; // claygo native fix: clipping
+             bool offscreen = Clay__ElementIsOffscreen(&currentElementBoundingBox);
++            if (generateRenderCommands && offscreen && !currentElement->isTextElement) { // claygo native fix: clipping
++                currentElementTreeNode->clipPending = currentElement->config.clip.horizontal || currentElement->config.clip.vertical;
++                if (currentElementTreeNode->clipPending) pendingOwnedClipCount++;
++            }
+ 
+             // Generate render commands for current element
+             if (generateRenderCommands && !offscreen) {
++                if (pendingOwnedClipCount) { // claygo native fix: clipping
++                    Clay__ClipFlushPendingOwned(&dfsBuffer, root->zIndex);
++                    pendingOwnedClipCount = 0;
++                }
+                 if (currentElement->isTextElement) {
+                     Clay_TextElementConfig *textElementConfig = &currentElement->textConfig;
+                     float naturalLineHeight = currentElement->textElementData.preferredDimensions.height;
+@@ -3183,13 +3197,9 @@
+             }
+         }
+ 
+-        if (root->clipElementId) {
+-            Clay_LayoutElementHashMapItem *clipHashMapItem = Clay__GetHashMapItem(root->clipElementId);
+-            if (clipHashMapItem && !Clay__ElementIsOffscreen(&clipHashMapItem->boundingBox)) {
+-                Clay__AddRenderCommand(CLAY__INIT(Clay_RenderCommand) { .id = Clay__HashNumber(rootElement->id, rootElement->children.length + 11).id, .commandType = CLAY_RENDER_COMMAND_TYPE_SCISSOR_END });
+-            }
+-        }
++        Clay__ClipEndRoot(rootElement, clipCount); // claygo native fix: clipping
+     }
++    Clay__ClipResolveCommands(); // claygo native fix: clipping
+ }
+ 
+ CLAY_WASM_EXPORT("Clay_GetPointerOverIds")
+@@ -4106,7 +4116,7 @@
+ 
+             Clay_LayoutElementHashMapItem *mapItem = Clay__GetHashMapItem(currentElement->id); // TODO think of a way around this, maybe the fact that it's essentially a binary tree limits the cost, but the worst case is not great
+             int32_t clipElementId = Clay__int32_tArray_GetValue(&context->layoutElementClipElementIds, (int32_t)(currentElement - context->layoutElements.internalArray));
+-            Clay_LayoutElementHashMapItem *clipItem = Clay__GetHashMapItem(clipElementId);
++            (void)clipElementId; // claygo native fix: clipping, ancestry is stored on the element.
+             // This check skips mouse interactions for elements that are currently "exit transitioning"
+             if (mapItem && mapItem->generation > context->generation) {
+                 // Conditionally skip mouse interactions on non-exit transitions, based on user config
+@@ -4135,7 +4145,7 @@
+                 Clay_BoundingBox elementBox = mapItem->boundingBox;
+                 elementBox.x -= root->pointerOffset.x;
+                 elementBox.y -= root->pointerOffset.y;
+-                if ((Clay__PointIsInsideRect(position, elementBox)) && (clipElementId == 0 || (Clay__PointIsInsideRect(position, clipItem->boundingBox)) || context->externalScrollHandlingEnabled)) {
++                if ((Clay__PointIsInsideRect(position, elementBox)) && (context->externalScrollHandlingEnabled || Clay__ClipPointerWithinNative(currentElement->clipAncestorId)) /* claygo native fix: clipping */) {
+                     if (!skipTree) {
+                         if (mapItem->onHoverFunction) {
+                             mapItem->onHoverFunction(mapItem->elementId, context->pointerInfo, mapItem->hoverFunctionUserData);
+@@ -4579,6 +4589,7 @@
+                         Clay__LayoutElementTreeRootArray_Add(&context->layoutElementTreeRoots, CLAY__INIT(Clay__LayoutElementTreeRoot) {
+                             .layoutElementIndex = (int32_t)(data->elementThisFrame - context->layoutElements.internalArray),
+                             .parentId = floatingConfig->parentId,
++                            .clipElementId = data->elementThisFrame->clipAncestorId, // claygo native fix: clipping, retain native clips during exits.
+                             .zIndex = floatingConfig->zIndex,
+                         });
+                     }

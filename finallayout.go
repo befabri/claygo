@@ -14,6 +14,7 @@ type layoutTreeNode struct {
 	element         *LayoutElement
 	position        Vector2
 	nextChildOffset Vector2
+	clipPending     bool // Native clipping: defer offscreen owners until a visible descendant.
 }
 
 // borderHasAnyWidth mirrors Clay__BorderHasAnyWidth (oracle/clay.h ~line 1420):
@@ -65,6 +66,7 @@ func (c *Context) elementIsOffscreen(b BoundingBox) bool {
 // deltaTime parameter isn't needed here because transition advancing lives in
 // advanceTransitions, not the layout pass.
 func (c *Context) calculateFinalLayout() RenderCommandArray {
+	c.beginClipLayout()
 	// Column wrap cannot break lines until heights are known, so the sizing
 	// sweep runs a second time when any TopToBottom wrap parent exists; row wrap
 	// and the default path take one sweep. The line pool is not rewound between
@@ -123,6 +125,8 @@ func (c *Context) calculateFinalLayout() RenderCommandArray {
 	for treeIdx := range c.layoutElementTreeRoots.Length {
 		c.emitTreeRoot(c.layoutElementTreeRoots.Get(treeIdx))
 	}
+
+	c.resolveClipCommands()
 
 	// Construct the public-facing array view. We expose only the live
 	// prefix of the fixed-capacity array so callers don't see stale slots
@@ -201,33 +205,7 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 		}
 	}
 
-	// Floating roots nested inside a clip ancestor emit a SCISSOR_START
-	// scoped to the clip's bbox so their content is masked by the same
-	// scroll viewport as the anchor. Matches C 2779-2802.
-	emitClipBound := false
-	var clipScissorBBox BoundingBox
-	if treeRoot.ClipElementID != 0 {
-		if clipItem := c.getHashMapItem(treeRoot.ClipElementID); clipItem != nil &&
-			!c.elementIsOffscreen(clipItem.BoundingBox) {
-			if c.externalScrollHandlingEnabled && clipItem.LayoutElement != nil {
-				clipCfg := clipItem.LayoutElement.Config.Clip
-				if clipCfg.Horizontal {
-					rootPosition.X += clipCfg.ChildOffset.X
-				}
-				if clipCfg.Vertical {
-					rootPosition.Y += clipCfg.ChildOffset.Y
-				}
-			}
-			clipScissorBBox = clipItem.BoundingBox
-			emitClipBound = true
-			c.emitCommand(RenderCommand{
-				BoundingBox: clipScissorBBox,
-				ID:          HashNumber(root.ID, uint32(root.Children.Length)+10).ID,
-				ZIndex:      treeRoot.ZIndex,
-				CommandType: RenderCommandTypeScissorStart,
-			})
-		}
-	}
+	clipCount := c.beginNativeFloatingClips(root, treeRoot, &rootPosition)
 
 	dfs := append(c.layoutTreeNodeScratch[:0], layoutTreeNode{
 		element:  root,
@@ -244,6 +222,7 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 	// ZIndex. Some upward/end commands intentionally keep the zero value to match
 	// oracle initializers.
 	treeZ := treeRoot.ZIndex
+	pendingOwnedClipCount := 0
 
 	for len(dfs) > 0 {
 		idx := len(dfs) - 1
@@ -265,11 +244,14 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 				if item := c.getHashMapItem(cur.ID); item != nil {
 					upBBox = item.BoundingBox
 				}
-				// Offscreen elements skip the upward emit (BORDER, dividers,
-				// OVERLAY_END, SCISSOR_END). Matches C `if (generateRenderCommands
-				// && !Clay__ElementIsOffscreen(&currentElementData->boundingBox))`
-				// gate around the entire upward-emit block (oracle/clay.h:2820).
+				// Offscreen owners omit paint and overlay commands, but still
+				// close the scissor that confined their visible descendants.
 				if c.elementIsOffscreen(upBBox) {
+					if node.clipPending {
+						pendingOwnedClipCount--
+					} else {
+						c.endOwnedClip(cur, rootChildCount)
+					}
 					dfs = dfs[:idx]
 					visited = visited[:idx]
 					continue
@@ -375,13 +357,7 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 					})
 				}
 
-				if cur.Config.Clip.Horizontal || cur.Config.Clip.Vertical {
-					c.emitCommand(RenderCommand{
-						ID: HashNumber(cur.ID, uint32(rootChildCount)+11).ID,
-
-						CommandType: RenderCommandTypeScissorEnd,
-					})
-				}
+				c.endOwnedClip(cur, rootChildCount)
 			}
 			dfs = dfs[:idx]
 			visited = visited[:idx]
@@ -417,16 +393,16 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 			bbox.Height += expand.Height * 2
 		}
 
+		cur.clipLayoutPass = c.clipLayoutPass
 		// Record the final bbox on the hashmap item so caller queries
 		// (Hovered, GetElementData) see correct values.
 		if item := c.getHashMapItem(cur.ID); item != nil {
 			item.BoundingBox = bbox
 		}
 
-		// Offscreen elements still descend (their floating children might be
-		// in view, their bbox is still recorded above) but skip the actual
-		// render-command emission. Matches the C `if (generateRenderCommands
-		// && !offscreen)` gate at oracle/clay.h ~2933.
+		// Offscreen elements still record geometry and position descendants.
+		// Paint is culled, but an owned clip must still constrain descendants
+		// that reach the screen through offsets or an unrestricted axis.
 		offscreen := c.elementIsOffscreen(bbox)
 		if offscreen {
 			if cur.IsTextElement {
@@ -434,12 +410,20 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 				visited = visited[:idx]
 				continue
 			}
+			node.clipPending = cur.Config.Clip.Horizontal || cur.Config.Clip.Vertical
+			if node.clipPending {
+				pendingOwnedClipCount++
+			}
 			// Non-text: fall through to child positioning so the descent
 			// happens, but tag-skip the emit-blocks via the wrap below.
 			goto skipEmit
 		}
 
 		// Emit render commands for the current element.
+		if pendingOwnedClipCount > 0 {
+			c.flushPendingOwnedClips(dfs[:idx], treeZ)
+			pendingOwnedClipCount = 0
+		}
 		if cur.IsTextElement {
 			// Iterate wrappedLines (built earlier by wrapTextElements). One
 			// TEXT command per line, positioned via lineHeight stride and
@@ -555,22 +539,7 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 			})
 		}
 
-		if cur.Config.Clip.Horizontal || cur.Config.Clip.Vertical {
-			c.emitCommand(RenderCommand{
-				BoundingBox: bbox,
-				RenderData: RenderData{
-					Clip: ClipRenderData{
-						Horizontal: cur.Config.Clip.Horizontal,
-						Vertical:   cur.Config.Clip.Vertical,
-					},
-				},
-				UserData: cur.Config.UserData,
-				ID:       cur.ID,
-				ZIndex:   treeZ,
-
-				CommandType: RenderCommandTypeScissorStart,
-			})
-		}
+		c.beginOwnedClip(cur, bbox, treeZ)
 
 		// Background rectangle. Matches C: emitted whenever
 		// BackgroundColor.A > 0, regardless of image/custom/clip — those
@@ -763,13 +732,7 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 	c.layoutTreeNodeScratch = dfs[:0]
 	c.visitedNodeScratch = visited[:0]
 
-	// Close the floating-tree-root scissor opened above, if any.
-	if emitClipBound {
-		c.emitCommand(RenderCommand{
-			ID:          HashNumber(root.ID, uint32(root.Children.Length)+11).ID,
-			CommandType: RenderCommandTypeScissorEnd,
-		})
-	}
+	c.endFloatingClips(root, clipCount)
 }
 
 // computeFloatingPosition resolves a floating element's top-left corner

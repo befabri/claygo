@@ -1,6 +1,9 @@
 package claygo
 
-import "testing"
+import (
+	"strconv"
+	"testing"
+)
 
 // Benchmarks for the per-frame layout path. These aren't run by CI (go test
 // doesn't run benchmarks by default); run with:
@@ -115,4 +118,29 @@ func freshContextB(b *testing.B) *Context {
 	})
 	ctx.SetMeasureTextFunction(deterministicMeasureText, nil)
 	return ctx
+}
+
+// A pointer outside every box must not walk each node's entire clip ancestry.
+func BenchmarkNativeClipPointerOutside(b *testing.B) {
+	for _, depth := range []int{64, 1024} {
+		b.Run(strconv.Itoa(depth), func(b *testing.B) {
+			c := freshContextB(b)
+			c.BeginLayout()
+			for range depth {
+				c.OpenElement()
+				c.ConfigureOpenElement(Decl{
+					Layout: clipTestLayout(100, 100),
+					Clip:   ClipElementConfig{Horizontal: true, Vertical: true},
+				})
+			}
+			for range depth {
+				c.CloseElement()
+			}
+			c.EndLayout(0)
+			b.ReportAllocs()
+			for b.Loop() {
+				c.SetPointerState(Vector2{1000, 1000}, false)
+			}
+		})
+	}
 }

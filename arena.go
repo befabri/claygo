@@ -46,9 +46,10 @@ func minMemorySizeFor(maxElements, maxWords int32) uint {
 	ephemeral += sizeOfArray[layoutElementTreeRoot](maxElements) // layoutElementTreeRoots
 	ephemeral += sizeOfArray[WrappedTextLine](maxElements)       // wrappedTextLines
 	ephemeral += sizeOfArray[int32](maxElements)                 // textElements
-	ephemeral += sizeOfArray[int32](maxElements)                 // openClipElementStack
+	ephemeral += sizeOfArray[int32](2 * maxElements)             // openClipElementStack
 	ephemeral += sizeOfArray[int32](maxElements)                 // layoutElementClipElementIds
 	ephemeral += sizeOfArray[WrapLine](2 * maxElements)          // wrapLines
+	ephemeral += sizeOfArray[clipCommand](maxElements)           // deferred clip rectangles
 
 	// Slack: 64 B cacheline-align safety, 16 B per allocation for alignUp
 	// padding, plus headroom for small scratch structures and future upstream
