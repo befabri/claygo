@@ -350,6 +350,7 @@ func (c *Context) cloneElementsWithExitTransition() {
 
 		for bi := 0; bi < len(bfs); bi++ {
 			parentIdx := bfs[bi].cloneIdx
+			c.copyClipScopes(c.layoutElements.GetCheckCapacity(parentIdx))
 			srcParent := bfs[bi].source
 			parent := c.layoutElements.GetCheckCapacity(parentIdx)
 			item := c.getHashMapItem(parent.ID)

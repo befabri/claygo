@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -56,7 +57,8 @@ func TestSceneParity(t *testing.T) {
 }
 
 // This compares builds with and without any extension implementation, including
-// scenes that actually exercise native corrections.
+// scenes that actually exercise native corrections. The disabled variant sends
+// zero-axis entries through configuration copying in every scene declaration.
 func TestExtensionsPreserveNativeBaseline(t *testing.T) {
 	_, nativeAvailable := oracleList(t, "oracle-native")
 	_, extendedAvailable := oracleList(t, "oracle")
@@ -68,9 +70,11 @@ func TestExtensionsPreserveNativeBaseline(t *testing.T) {
 	for _, name := range names {
 		t.Run(name, func(t *testing.T) {
 			want := runOracleScene(t, "oracle-native", name)
-			got := runOracleScene(t, "oracle", name)
-			if !bytes.Equal(got, want) {
-				t.Fatalf("extensions change native baseline for %s", name)
+			for _, args := range [][]string{{name}, {"--disabled-clip-scopes", name}} {
+				got := runOracleScene(t, "oracle", args...)
+				if !bytes.Equal(got, want) {
+					t.Fatalf("extensions change native baseline with arguments %v", args)
+				}
 			}
 		})
 	}
@@ -199,4 +203,32 @@ func setOf(names []string) map[string]bool {
 		m[n] = true
 	}
 	return m
+}
+
+// The C scenes include pointer/capture assertions as well as render output.
+// Run them, rather than only reading their committed render snapshots.
+func TestClipScopesLiveOracle(t *testing.T) {
+	_, available := oracleList(t, "oracle")
+	if !available {
+		return
+	}
+	for name := range extensionScenes {
+		if !strings.HasPrefix(name, "ext_clip_scopes_") {
+			continue
+		}
+		t.Run(name, func(t *testing.T) {
+			data := runOracleScene(t, "oracle", name)
+			var got goldenArray
+			if err := json.Unmarshal(data, &got); err != nil {
+				t.Fatal(err)
+			}
+			want, err := loadGolden(name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("C reference for %s no longer reproduces its golden", name)
+			}
+		})
+	}
 }

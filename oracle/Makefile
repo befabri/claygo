@@ -93,7 +93,7 @@ refresh-patch:
 # verbatim binary must list no ext_ scene, the patched binary must list every
 # upstream scene, and the patched binary must reproduce every upstream golden
 # byte for byte. Corrected native cases must match the independent native
-# binary. (Needs: cc, make, patch, git.)
+# binary, including disabled scope entries. (Needs: cc, make, patch, git.)
 verify:
 	@$(MAKE) clean
 	@$(MAKE) all
@@ -125,6 +125,9 @@ verify:
 		fi; \
 		if ! ./$(BIN) $$s | cmp -s - ../testdata/$$s.golden.json; then \
 			echo "verify: FAILED — extensions change native baseline $$s"; exit 1; \
+		fi; \
+		if ! ./$(BIN) --disabled-clip-scopes $$s | cmp -s - ../testdata/$$s.golden.json; then \
+			echo "verify: FAILED — disabled ClipScopes change native baseline $$s"; exit 1; \
 		fi; \
 	done
 	@echo "verify: OK — goldens reproduce; upstream corpus unchanged; disabled extensions preserve the native baseline"

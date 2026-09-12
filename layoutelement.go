@@ -51,6 +51,9 @@ type LayoutElement struct {
 	// current geometry from completed transitions skipped by final layout.
 	clipAncestorID uint32
 	clipLayoutPass uint64
+
+	// ClipScopes extension: fail closed when the frame pool is exhausted.
+	clipScopesInvalid bool
 }
 
 // TextElementData is the per-text-leaf bookkeeping. Mirrors

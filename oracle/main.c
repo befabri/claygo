@@ -27,6 +27,20 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if !defined(CLAY_ORACLE_UPSTREAM) && !defined(CLAY_ORACLE_NATIVE)
+static bool inject_disabled_clip_scopes;
+static void configure_with_disabled_clip_scopes(Clay_ElementDeclaration declaration) {
+    if (inject_disabled_clip_scopes) {
+        Clay_ClipScope disabled[] = {{0}, {.elementId = CLAY_ID("missing-disabled-scope")}};
+        declaration.floating.clipScopes = (Clay_ClipScopeSlice){2, disabled};
+        Clay__ConfigureOpenElement(declaration);
+        return;
+    }
+    Clay__ConfigureOpenElement(declaration);
+}
+#define Clay__ConfigureOpenElement(...) configure_with_disabled_clip_scopes(__VA_ARGS__)
+#endif
+
 // ---------------------------------------------------------------------------
 // Deterministic fake text measurement
 // ---------------------------------------------------------------------------
@@ -1825,6 +1839,114 @@ static Clay_RenderCommandArray scene_ext_wrap_rows_line_gap_scroll(void) {
     return Clay_EndLayout(0.0f);
 }
 
+// Floating clip scopes: small, independently declared reference scenes.
+static void ext_clip_target(Clay_ElementId id, Clay_BoundingBox box, int16_t z) {
+    CLAY(id, {
+        .layout = {.sizing = {CLAY_SIZING_FIXED(box.width), CLAY_SIZING_FIXED(box.height)}},
+        .floating = {.attachTo = CLAY_ATTACH_TO_ROOT, .offset = {box.x, box.y}, .zIndex = z,
+                     .pointerCaptureMode = CLAY_POINTER_CAPTURE_MODE_PASSTHROUGH},
+    });
+}
+
+
+static int ext_clip_hovers;
+static void ext_clip_hover(Clay_ElementId id, Clay_PointerData pointer, void *data) {
+    ext_clip_hovers++;
+}
+
+static Clay_RenderCommandArray scene_ext_clip_scopes_axes(void) {
+    Clay_ClipScope scopes[] = {{.elementId = CLAY_ID("horizontal"), .horizontal = true},
+                              {.elementId = CLAY_ID("vertical"), .vertical = true}};
+    static int payload;
+    ext_clip_hovers = 0;
+    Clay_BeginLayout();
+    CLAY(CLAY_ID("behind"), {.layout = {.sizing = {CLAY_SIZING_FIXED(100), CLAY_SIZING_FIXED(100)}}});
+    CLAY(CLAY_ID("front"), {
+        .layout = {.sizing = {CLAY_SIZING_FIXED(100), CLAY_SIZING_FIXED(100)}},
+        .backgroundColor = {200, 80, 80, 255},
+        .image = {.imageData = &payload}, .custom = {.customData = &payload},
+        .floating = {.attachTo = CLAY_ATTACH_TO_ROOT, .zIndex = 2, .clipScopes = {2, scopes}},
+    }) { Clay_OnHover(ext_clip_hover, NULL); }
+    scopes[0].horizontal = false; // configuration must have copied the array
+    scopes[1].elementId = CLAY_ID("missing");
+    ext_clip_target(CLAY_ID("horizontal"), (Clay_BoundingBox){20, 0, 40, 100}, 10);
+    ext_clip_target(CLAY_ID("vertical"), (Clay_BoundingBox){0, 10, 100, 20}, 10);
+    Clay_RenderCommandArray commands = Clay_EndLayout(0);
+    clip_expect_hit(CLAY_ID("front"), (Clay_Vector2){10, 20}, false);
+    clip_expect_hit(CLAY_ID("behind"), (Clay_Vector2){10, 20}, true);
+    if (ext_clip_hovers != 0) exit(1);
+    clip_expect_hit(CLAY_ID("front"), (Clay_Vector2){30, 20}, true);
+    if (ext_clip_hovers != 1 || Clay_PointerOver(CLAY_ID("behind"))) exit(1);
+    clip_expect_hit(CLAY_ID("front"), (Clay_Vector2){60, 20}, false);
+    clip_expect_hit(CLAY_ID("front"), (Clay_Vector2){30, 30}, false);
+    return commands;
+}
+
+
+
+static Clay_RenderCommandArray scene_ext_clip_scopes_missing(void) {
+    Clay_RenderCommandArray commands = {0};
+    Clay_ClipScope scope = {.elementId = CLAY_ID("target"), .vertical = true};
+    for (int frame = 0; frame < 2; frame++) {
+        Clay_BeginLayout();
+        CLAY(CLAY_ID("front"), {
+            .layout = {.sizing = {CLAY_SIZING_FIXED(100), CLAY_SIZING_FIXED(100)}},
+            .backgroundColor = {200, 80, 80, 255},
+            .floating = {.attachTo = CLAY_ATTACH_TO_ROOT, .clipScopes = {1, &scope}},
+        });
+        if (!frame) ext_clip_target(CLAY_ID("target"), (Clay_BoundingBox){0, 0, 100, 30}, 10);
+        commands = Clay_EndLayout(0);
+        clip_expect_hit(CLAY_ID("front"), (Clay_Vector2){10, 10}, !frame);
+    }
+    return commands;
+}
+
+
+
+static Clay_RenderCommandArray scene_ext_clip_scopes_transition(void) {
+    Clay_RenderCommandArray commands = {0};
+    Clay_ClipScope scope = {.elementId = CLAY_ID("front"), .horizontal = true};
+    for (int frame = 0; frame < 2; frame++) {
+        float width = frame ? 100 : 40;
+        Clay_BeginLayout();
+        CLAY(CLAY_ID("front"), {
+            .layout = {.sizing = {CLAY_SIZING_FIXED(width), CLAY_SIZING_FIXED(100)}},
+            .backgroundColor = {200, 80, 80, 255},
+            .floating = {.attachTo = CLAY_ATTACH_TO_ROOT, .clipScopes = {1, &scope}},
+            .transition = {.handler = clip_keep_transition, .duration = 1, .properties = CLAY_TRANSITION_PROPERTY_WIDTH},
+        });
+        commands = Clay_EndLayout(0);
+    }
+    return commands;
+}
+
+static Clay_RenderCommandArray scene_ext_clip_scopes_exit(void) {
+    Clay_RenderCommandArray commands = {0};
+    Clay_ClipScope original = {.elementId = CLAY_ID("original"), .horizontal = true};
+    Clay_ClipScope unrelated = {.elementId = CLAY_ID("unrelated"), .vertical = true};
+    for (int frame = 0; frame < 4; frame++) {
+        Clay_BeginLayout();
+        ext_clip_target(CLAY_ID("original"), (Clay_BoundingBox){0, 0, 30, 100}, 0);
+        ext_clip_target(CLAY_ID("unrelated"), (Clay_BoundingBox){0, 0, 100, 100}, 0);
+        if (!frame) {
+            CLAY(CLAY_ID("exiting"), {
+                .layout = {.sizing = {CLAY_SIZING_FIXED(100), CLAY_SIZING_FIXED(100)}},
+                .backgroundColor = {200, 80, 80, 255},
+                .floating = {.attachTo = CLAY_ATTACH_TO_ROOT, .zIndex = 2, .clipScopes = {1, &original}},
+                .transition = {.handler = clip_keep_transition, .duration = 1, .properties = CLAY_TRANSITION_PROPERTY_X,
+                               .exit = {.setFinalState = clip_exit}},
+            });
+        } else {
+            CLAY(CLAY_ID("new"), {
+                .layout = {.sizing = {CLAY_SIZING_FIXED(100), CLAY_SIZING_FIXED(100)}},
+                .floating = {.attachTo = CLAY_ATTACH_TO_ROOT, .offset = {0, 200}, .clipScopes = {1, &unrelated}},
+            });
+        }
+        commands = Clay_EndLayout(0);
+    }
+    return commands;
+}
+
 #endif // CLAY_ORACLE_UPSTREAM
 
 // ---------------------------------------------------------------------------
@@ -1904,6 +2026,10 @@ static Scene SCENES[] = {
     { "ext_wrap_rows_line_gap_borders",   scene_ext_wrap_rows_line_gap_borders   },
     { "ext_wrap_cols_line_gap",           scene_ext_wrap_cols_line_gap           },
     { "ext_wrap_rows_line_gap_scroll",    scene_ext_wrap_rows_line_gap_scroll    },
+    { "ext_clip_scopes_axes", scene_ext_clip_scopes_axes },
+    { "ext_clip_scopes_missing", scene_ext_clip_scopes_missing },
+    { "ext_clip_scopes_transition", scene_ext_clip_scopes_transition },
+    { "ext_clip_scopes_exit", scene_ext_clip_scopes_exit },
 #endif
 };
 static const int SCENE_COUNT = (int)(sizeof(SCENES) / sizeof(SCENES[0]));
@@ -1934,6 +2060,12 @@ int main(int argc, char **argv) {
         Clay_SetMaxElementCount((int32_t)capacity);
         argv += 2; argc -= 2;
     }
+#if !defined(CLAY_ORACLE_UPSTREAM) && !defined(CLAY_ORACLE_NATIVE)
+    if (argc == 3 && strcmp(argv[1], "--disabled-clip-scopes") == 0) {
+        inject_disabled_clip_scopes = true;
+        argv++; argc--;
+    }
+#endif
     if (argc < 2) {
         fprintf(stderr, "usage: %s [--max-elements N] <scene-name>\n   or: %s --list\n", argv[0], argv[0]);
         return 2;

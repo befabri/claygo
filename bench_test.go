@@ -120,6 +120,24 @@ func freshContextB(b *testing.B) *Context {
 	return ctx
 }
 
+func BenchmarkClipScopes(b *testing.B) {
+	c := freshContextB(b)
+	declaration := Decl{
+		Layout: clipTestLayout(100, 100), BackgroundColor: RGBA(1, 2, 3, 255),
+		Floating: FloatingElementConfig{AttachTo: AttachToRoot, ClipScopes: []ClipScope{
+			{ElementID: GetElementID("viewport"), Horizontal: true, Vertical: true},
+		}},
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		c.BeginLayout()
+		clipTestScope(c, "viewport", BoundingBox{0, 0, 100, 100}, 0)
+		BoxID(c, "front", declaration, nil)
+		c.EndLayout(0)
+		c.SetPointerState(Vector2{10, 10}, false)
+	}
+}
+
 // A pointer outside every box must not walk each node's entire clip ancestry.
 func BenchmarkNativeClipPointerOutside(b *testing.B) {
 	for _, depth := range []int{64, 1024} {

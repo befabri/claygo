@@ -753,6 +753,7 @@ func (c *Context) debugInspectorBody(item *LayoutElementHashMapItem) {
 			Text(c, "{ x: "+ftoi(f.Offset.X)+", y: "+ftoi(f.Offset.Y)+" }", debugTextConfig())
 			Text(c, "Z-Index", debugTitleConfig())
 			Text(c, strconv.Itoa(int(f.ZIndex)), debugTextConfig())
+			c.debugClipScopes(le)
 		})
 	}
 	// Clip section.

@@ -206,6 +206,7 @@ func (c *Context) emitTreeRoot(treeRoot *layoutElementTreeRoot) {
 	}
 
 	clipCount := c.beginNativeFloatingClips(root, treeRoot, &rootPosition)
+	clipCount = c.appendClipScopes(root, treeRoot.ZIndex, clipCount)
 
 	dfs := append(c.layoutTreeNodeScratch[:0], layoutTreeNode{
 		element:  root,

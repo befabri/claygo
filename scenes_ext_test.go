@@ -11,7 +11,7 @@ import (
 // extensionScenes maps scene name -> Go layout builder for the claygo
 // extensions upstream Clay does not have. Each name carries the ext_ prefix,
 // must match a scene compiled into the patched oracle binary (oracle/main.c,
-// inside #ifndef CLAY_ORACLE_UPSTREAM), and has a testdata/<name>.golden.json
+// excluded from both baseline builds), and has a testdata/<name>.golden.json
 // regenerated from that binary. Builders drive their own frames so the one
 // multi-frame transition scene fits the same table.
 var extensionScenes = map[string]func(*Context) RenderCommandArray{
@@ -38,6 +38,12 @@ var extensionScenes = map[string]func(*Context) RenderCommandArray{
 	"ext_wrap_rows_line_gap_borders":   sceneExtWrapRowsLineGapBorders,
 	"ext_wrap_cols_line_gap":           sceneExtWrapColsLineGap,
 	"ext_wrap_rows_line_gap_scroll":    sceneExtWrapRowsLineGapScroll,
+	"ext_clip_scopes_axes":             sceneExtClipScopesAxes,
+
+	"ext_clip_scopes_missing": sceneExtClipScopesMissing,
+
+	"ext_clip_scopes_transition": sceneExtClipScopesTransition,
+	"ext_clip_scopes_exit":       sceneExtClipScopesExit,
 }
 
 // extensionScenePrefix separates extension scenes from the upstream corpus in
@@ -672,4 +678,75 @@ func sceneExtWrapRowsLineGapScroll(c *Context) RenderCommandArray {
 			}
 		})
 	})
+}
+
+// These scenes mirror the independent C declarations in oracle/main.c.
+// Geometry, command order, and axis flags are checked against C-made goldens.
+func sceneExtClipScopesAxes(c *Context) RenderCommandArray {
+	c.BeginLayout()
+	BoxID(c, "behind", Decl{Layout: clipTestLayout(100, 100)}, nil)
+	BoxID(c, "front", Decl{
+		Layout: clipTestLayout(100, 100), BackgroundColor: RGBA(200, 80, 80, 255),
+		Image: ImageElementConfig{ImageData: 1}, Custom: CustomElementConfig{CustomData: 1},
+		Floating: FloatingElementConfig{AttachTo: AttachToRoot, ZIndex: 2, ClipScopes: []ClipScope{
+			{ElementID: GetElementID("horizontal"), Horizontal: true},
+			{ElementID: GetElementID("vertical"), Vertical: true},
+		}},
+	}, nil)
+	clipTestScope(c, "horizontal", BoundingBox{20, 0, 40, 100}, 10)
+	clipTestScope(c, "vertical", BoundingBox{0, 10, 100, 20}, 10)
+	return c.EndLayout(0)
+}
+
+func sceneExtClipScopesMissing(c *Context) RenderCommandArray {
+	var commands RenderCommandArray
+	for frame := range 2 {
+		c.BeginLayout()
+		BoxID(c, "front", Decl{
+			Layout: clipTestLayout(100, 100), BackgroundColor: RGBA(200, 80, 80, 255),
+			Floating: FloatingElementConfig{AttachTo: AttachToRoot, ClipScopes: []ClipScope{{ElementID: GetElementID("target"), Vertical: true}}},
+		}, nil)
+		if frame == 0 {
+			clipTestScope(c, "target", BoundingBox{0, 0, 100, 30}, 10)
+		}
+		commands = c.EndLayout(0)
+	}
+	return commands
+}
+
+func sceneExtClipScopesTransition(c *Context) RenderCommandArray {
+	var commands RenderCommandArray
+	for _, width := range []float32{40, 100} {
+		c.BeginLayout()
+		BoxID(c, "front", Decl{
+			Layout: clipTestLayout(width, 100), BackgroundColor: RGBA(200, 80, 80, 255),
+			Floating:   FloatingElementConfig{AttachTo: AttachToRoot, ClipScopes: []ClipScope{{ElementID: GetElementID("front"), Horizontal: true}}},
+			Transition: TransitionElementConfig{Handler: keepTransitionRunning, Duration: 1, Properties: TransitionPropertyWidth},
+		}, nil)
+		commands = c.EndLayout(0)
+	}
+	return commands
+}
+
+func sceneExtClipScopesExit(c *Context) RenderCommandArray {
+	var commands RenderCommandArray
+	for frame := range 4 {
+		c.BeginLayout()
+		clipTestScope(c, "original", BoundingBox{0, 0, 30, 100}, 0)
+		clipTestScope(c, "unrelated", BoundingBox{0, 0, 100, 100}, 0)
+		if frame == 0 {
+			BoxID(c, "exiting", Decl{
+				Layout: clipTestLayout(100, 100), BackgroundColor: RGBA(200, 80, 80, 255),
+				Floating:   FloatingElementConfig{AttachTo: AttachToRoot, ZIndex: 2, ClipScopes: []ClipScope{{ElementID: GetElementID("original"), Horizontal: true}}},
+				Transition: clipTestExitConfig(),
+			}, nil)
+		} else {
+			BoxID(c, "new", Decl{
+				Layout:   clipTestLayout(100, 100),
+				Floating: FloatingElementConfig{AttachTo: AttachToRoot, Offset: Vector2{Y: 200}, ClipScopes: []ClipScope{{ElementID: GetElementID("unrelated"), Vertical: true}}},
+			}, nil)
+		}
+		commands = c.EndLayout(0)
+	}
+	return commands
 }

@@ -140,6 +140,7 @@ func (c *Context) configureOpenElement(decl Decl) {
 		return
 	}
 	openLE.Config = decl
+	c.copyClipScopes(openLE)
 
 	if (decl.Layout.Sizing.Width.Type == SizingTypePercent && decl.Layout.Sizing.Width.Percent > 1) ||
 		(decl.Layout.Sizing.Height.Type == SizingTypePercent && decl.Layout.Sizing.Height.Percent > 1) {

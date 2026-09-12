@@ -1,0 +1,126 @@
+claygo extension: clip scopes (docs/clip-scopes-spec.md).
+
+Generated with rebase-patch.sh; edit the C work file, not the hunks.
+
+--- a/clay.h
++++ b/clay.h
+@@ -483,6 +483,10 @@
+ 
+ // Controls various settings related to "floating" elements, which are elements that "float" above other elements, potentially overlapping their boundaries,
+ // and not affecting the layout of sibling or parent elements.
++// claygo extension: clip scopes (zero selected axes adds no restriction).
++typedef struct { Clay_ElementId elementId; bool horizontal; bool vertical; } Clay_ClipScope;
++typedef struct { int32_t length; const Clay_ClipScope *scopes; } Clay_ClipScopeSlice;
++
+ typedef struct Clay_FloatingElementConfig {
+     // Offsets this floating element by the provided x,y coordinates from its attachPoints.
+     Clay_Vector2 offset;
+@@ -513,6 +517,7 @@
+     // CLAY_CLIP_TO_NONE (default) - The floating element does not inherit clipping.
+     // CLAY_CLIP_TO_ATTACHED_PARENT - The floating element is clipped to the same clipping rectangle as the element it's attached to.
+     Clay_FloatingClipToElement clipTo;
++    Clay_ClipScopeSlice clipScopes; // claygo extension: clip scopes, copied during configuration.
+ } Clay_FloatingElementConfig;
+ 
+ CLAY__WRAPPER_STRUCT(Clay_FloatingElementConfig);
+@@ -1226,6 +1231,8 @@
+     uint16_t length;
+ } Clay__LayoutElementChildren;
+ 
++// claygo extension: clip scopes, bounded frame copies.
++CLAY__ARRAY_DEFINE(Clay_ClipScope, Clay__ClipScopeArray)
+ // claygo native fix: clipping. Deferred rectangles for inherited native clips.
+ typedef struct { uint32_t elementId; int32_t index; } Clay__ClipCommand;
+ CLAY__ARRAY_DEFINE(Clay__ClipCommand, Clay__ClipCommandArray)
+@@ -1252,6 +1259,7 @@
+     Clay__WrapLineArraySlice wrapLines;
+     uint32_t clipAncestorId; // claygo native fix: clipping, native ancestry.
+     uint64_t clipLayoutPass; // claygo native fix: clipping, current geometry.
++    bool clipScopesInvalid; // claygo extension: clip scopes, fail closed on overflow.
+ } Clay_LayoutElement;
+ 
+ CLAY__ARRAY_DEFINE(Clay_LayoutElement, Clay_LayoutElementArray)
+@@ -1409,6 +1417,9 @@
+     // claygo native fix: clipping.
+     Clay__ClipCommandArray clipCommands;
+     uint64_t clipLayoutPass;
++    // claygo extension: clip scopes.
++    Clay__ClipScopeArray clipScopes, previousClipScopes;
++    bool warnMaxClipScopesExceeded;
+ };
+ 
+ Clay_Context* Clay__Context_Allocate_Arena(Clay_Arena *arena) {
+@@ -1902,6 +1913,7 @@
+ }
+ 
+ #include "patches/native-clipping.h" // claygo native fix: clipping
++#include "patches/clip-scopes.h" // claygo extension: clip scopes
+ 
+ void Clay__CloseElement(void) {
+     Clay_Context* context = Clay_GetCurrentContext();
+@@ -2159,6 +2171,7 @@
+     Clay_Context* context = Clay_GetCurrentContext();
+     Clay_LayoutElement *openLayoutElement = Clay__GetOpenLayoutElement();
+     openLayoutElement->config = *declaration;
++    Clay__ClipCopyScopes(openLayoutElement); // claygo extension: clip scopes
+     if ((declaration->layout.sizing.width.type == CLAY__SIZING_TYPE_PERCENT && declaration->layout.sizing.width.size.percent > 1) || (declaration->layout.sizing.height.type == CLAY__SIZING_TYPE_PERCENT && declaration->layout.sizing.height.size.percent > 1)) {
+         context->errorHandler.errorHandlerFunction(CLAY__INIT(Clay_ErrorData) {
+                 .errorType = CLAY_ERROR_TYPE_PERCENTAGE_OVER_1,
+@@ -2309,6 +2322,9 @@
+     context->pointerOverIds = Clay_ElementIdArray_Allocate_Arena(maxElementCount, arena);
+     // claygo native fix: clipping, deferred command storage.
+     context->clipCommands = Clay__ClipCommandArray_Allocate_Arena(maxElementCount, arena);
++    // claygo extension: clip scopes, persistent pools preserve exits across BeginLayout.
++    context->clipScopes = Clay__ClipScopeArray_Allocate_Arena(maxElementCount, arena);
++    context->previousClipScopes = Clay__ClipScopeArray_Allocate_Arena(maxElementCount, arena);
+     context->arenaResetOffset = arena->nextAllocation;
+ }
+ 
+@@ -2848,6 +2864,7 @@
+             rootPosition = targetAttachPosition;
+         }
+         uint32_t clipCount = Clay__ClipBeginNativeRoot(rootElement, root, &rootPosition, generateRenderCommands); // claygo native fix: clipping
++        clipCount = Clay__ClipAppendScopes(rootElement, root->zIndex, clipCount, generateRenderCommands); // claygo extension: clip scopes
+         Clay__LayoutElementTreeNodeArray_Add(&dfsBuffer, CLAY__INIT(Clay__LayoutElementTreeNode) { .layoutElement = rootElement, .position = rootPosition, .nextChildOffset = { .x = (float)rootElement->config.layout.padding.left, .y = (float)rootElement->config.layout.padding.top } });
+ 
+         context->treeNodeVisited.internalArray[0] = false;
+@@ -3875,6 +3892,7 @@
+                             // .zIndex
+                             CLAY_TEXT(CLAY_STRING("z-index"), infoTitleConfig);
+                             CLAY_TEXT(Clay__IntToString(floatingConfig->zIndex), infoTextConfig);
++                            Clay__ClipDebugScopes(selectedItem->layoutElement, infoTitleConfig, infoTextConfig); // claygo extension: clip scopes
+                             // .parentId
+                             CLAY_TEXT(CLAY_STRING("Parent"), infoTitleConfig);
+                             Clay_LayoutElementHashMapItem *hashItem = Clay__GetHashMapItem(floatingConfig->parentId);
+@@ -4152,6 +4170,7 @@
+     for (int32_t rootIndex = context->layoutElementTreeRoots.length - 1; rootIndex >= 0; --rootIndex) {
+         dfsBuffer.length = 0;
+         Clay__LayoutElementTreeRoot *root = Clay__LayoutElementTreeRootArray_Get(&context->layoutElementTreeRoots, rootIndex);
++        if (!Clay__ClipPointerAllowsRoot(Clay_LayoutElementArray_Get(&context->layoutElements, root->layoutElementIndex))) continue; // claygo extension: clip scopes
+         Clay__int32_tArray_Add(&dfsBuffer, (int32_t)root->layoutElementIndex);
+         context->treeNodeVisited.internalArray[0] = false;
+         bool found = false;
+@@ -4416,6 +4435,7 @@
+     Clay_Context* context = Clay_GetCurrentContext();
+     Clay__InitializeEphemeralMemory(context);
+     context->generation++;
++    Clay__ClipBeginFrame(); // claygo extension: clip scopes
+     context->dynamicElementIndex = 0;
+     // Set up the root container that covers the entire window
+     Clay_Dimensions rootDimensions = {context->layoutDimensions.width, context->layoutDimensions.height};
+@@ -4568,6 +4588,7 @@
+                     Clay__int32_tArray bfsBuffer = context->openLayoutElementStack;
+                     bfsBuffer.length = 0;
+                     data->elementThisFrame = Clay_LayoutElementArray_Add(&context->layoutElements, *data->elementThisFrame);
++                    Clay__ClipCopyScopes(data->elementThisFrame); // claygo extension: clip scopes
+                     int32_t exitingElementIndex = data->elementThisFrame - context->layoutElements.internalArray;
+                     Clay__StringArray_Add(&context->layoutElementIdStrings, *Clay__StringArray_GetCheckCapacity(&context->layoutElementIdStrings, exitingElementIndex));
+                     Clay__int32_tArray_Add(&context->layoutElementClipElementIds, *Clay__int32_tArray_GetCheckCapacity(&context->layoutElementClipElementIds, exitingElementIndex));
+@@ -4591,6 +4612,7 @@
+                                     }
+                                     int32_t childElementIndex = childElement - context->layoutElements.internalArray;
+                                     Clay_LayoutElement* newChildElement = Clay_LayoutElementArray_Add(&context->layoutElements, *childElement);
++                                    Clay__ClipCopyScopes(newChildElement); // claygo extension: clip scopes
+                                     Clay__StringArray_Add(&context->layoutElementIdStrings, *Clay__StringArray_GetCheckCapacity(&context->layoutElementIdStrings, childElementIndex));
+                                     Clay__int32_tArray_Add(&context->layoutElementClipElementIds, *Clay__int32_tArray_GetCheckCapacity(&context->layoutElementClipElementIds, childElementIndex));
+                                     Clay__int32_tArray_Add(&bfsBuffer, context->layoutElements.length - 1);

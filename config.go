@@ -71,6 +71,7 @@ type FloatingElementConfig struct {
 	PointerCaptureMode PointerCaptureMode
 	AttachTo           FloatingAttachToElement
 	ClipTo             FloatingClipToElement
+	ClipScopes         []ClipScope
 }
 
 // CustomElementConfig carries an opaque user pointer through to CUSTOM render

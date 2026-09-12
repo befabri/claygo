@@ -37,8 +37,11 @@ func (c *Context) SetPointerState(pos Vector2, isDown bool) {
 	// hit-testing lower roots; passthrough roots allow the scan to continue.
 	for i := c.layoutElementTreeRoots.Length - 1; i >= 0; i-- {
 		treeRoot := c.layoutElementTreeRoots.Get(i)
-		found := c.collectPointerOver(treeRoot.LayoutElementIndex)
 		rootElement := c.layoutElements.Get(treeRoot.LayoutElementIndex)
+		if !c.pointerWithinClipScopes(rootElement) {
+			continue
+		}
+		found := c.collectPointerOver(treeRoot.LayoutElementIndex)
 		if found && rootElement.Config.Floating.AttachTo != AttachToNone &&
 			rootElement.Config.Floating.PointerCaptureMode == PointerCaptureModeCapture {
 			break

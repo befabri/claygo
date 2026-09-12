@@ -61,6 +61,10 @@ type Context struct {
 	clipCommands   Array[clipCommand]
 	clipLayoutPass uint64
 
+	// ClipScopes extension: preserve last frame's scopes until exits are copied.
+	clipScopes, previousClipScopes Array[ClipScope]
+	warnMaxClipScopesExceeded      bool
+
 	// pointerOverIds is the per-frame list of element ids the pointer is
 	// currently inside, populated by SetPointerState. Higher-z tree roots are
 	// scanned first.
@@ -331,6 +335,8 @@ func (c *Context) allocateEphemeralMemory() {
 	// maxElements lines. Twice that, because the second sweep re-packs while the
 	// first sweep's column lines are still in use.
 	c.wrapLines = NewArray[WrapLine](2*maxElements, a)
+	c.clipScopes = NewArray[ClipScope](maxElements, a)
+	c.previousClipScopes = NewArray[ClipScope](maxElements, a)
 	c.clipCommands = NewArray[clipCommand](maxElements, a)
 
 	// Freshly-allocated arrays are already zero, so the first reset has nothing
@@ -416,6 +422,7 @@ func (c *Context) LayoutDimensions() Dimensions { return c.layoutDimensions }
 // of the tree.
 func (c *Context) BeginLayout() {
 	c.resetEphemeralMemory()
+	c.beginClipScopesFrame()
 	c.generation++
 	c.dynamicElementIndex = 0
 	c.warnHashMapCapacityExceeded = false
