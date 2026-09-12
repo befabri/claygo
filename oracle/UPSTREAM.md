@@ -42,8 +42,9 @@ make -C oracle verify
 
 This regenerates the expected files and fails if they differ from what is
 committed. It also checks that adding extensions leaves the upstream and
-native correction scenes unchanged. These comparisons cover the test scenes,
-not every possible layout.
+native correction scenes unchanged, both with `ClipScopes` unset and with its
+entries disabled. These comparisons cover the test scenes, not every possible
+layout.
 
 A scene must finish without engine errors. The oracle stops at the first error
 before writing JSON, and the Go checks also reject unexpected error output.
@@ -107,7 +108,7 @@ To change a patch or adapt it after an upstream update, work on the resulting
 C code rather than editing the diff by hand. For example:
 
 ```sh
-make -C oracle rebase-patch P=patches/0001-child-wrap.patch
+make -C oracle rebase-patch P=patches/0002-clip-scopes.patch
 ```
 
 Edit `oracle/clay_ext.h.work`. Any changes that could not be applied are in
@@ -115,7 +116,7 @@ Edit `oracle/clay_ext.h.work`. Any changes that could not be applied are in
 resolved. Then save the revised patch and check it:
 
 ```sh
-make -C oracle refresh-patch P=patches/0001-child-wrap.patch
+make -C oracle refresh-patch P=patches/0002-clip-scopes.patch
 make -C oracle regenerate
 go test ./...
 ```
@@ -126,9 +127,9 @@ your edited C file. Normal builds require exact patch context (`--fuzz=0`).
 
 ## Native corrections
 
-Native corrections are fixes to existing Clay behavior and apply by default.
-Their `*-native-*.patch` files are applied before extension patches and must
-build without any extension code.
+Native corrections are fixes to existing Clay behavior. They apply by default,
+including when `ClipScopes` is unset. Their `*-native-*.patch` files are applied
+before extension patches and must build without any extension code.
 
 ### Clipping
 
@@ -160,10 +161,12 @@ matching patch changes once the regression also passes against original Clay.
 
 Extensions add features and are off by default. When disabled, they must leave
 output unchanged from the **native baseline**: Clay with the fixes above.
+Follow the [extension guide](../docs/extensions.md) when adding one.
 
 | Extension | Go implementation | C reference |
 |---|---|---|
 | [Child wrapping](#child-wrap) | [wrapchildren.go](../wrapchildren.go) | [Header](patches/child-wrap.h), [patch](patches/0001-child-wrap.patch) |
+| [Floating clip scopes](#floating-clip-scopes) | [clip_scopes.go](../clip_scopes.go) | [Header](patches/clip-scopes.h), [patch](patches/0002-clip-scopes.patch) |
 
 ### Child wrap
 
@@ -173,6 +176,18 @@ line, enabling wrapping must leave the layout unchanged.
 
 Regression tests live in [wrapchildren_test.go](../wrapchildren_test.go).
 The shared C and Go scenes use the `ext_wrap_*` prefix.
+
+### Floating clip scopes
+
+`FloatingElementConfig.ClipScopes` keeps a floating panel's drawing and pointer
+input within selected viewports, including ones outside its parent tree.
+An empty list, or a list with every entry disabled, must leave both unchanged.
+
+Regression tests live in [clip_scopes_test.go](../clip_scopes_test.go).
+The `ext_clip_scopes_*` scenes cover clipping directions, missing targets,
+animations, and exiting panels. They also check pointer input and capture.
+See the [clip scopes specification](../docs/clip-scopes-spec.md) for the full
+behavior and limits.
 
 ### When upstream adds an equivalent feature
 

@@ -1,37 +1,30 @@
 # claygo
 
-A pure-Go port of [nicbarker/clay](https://github.com/nicbarker/clay): a
-high-performance 2D UI layout library with a flexbox-style model and a
-**renderer-agnostic** output. Each frame the solver returns a flat, sorted list
-of render commands that you draw however you like (SDL, OpenGL, a terminal, a
-canvas; claygo never touches a GPU itself).
+A Go port of [nicbarker/clay](https://github.com/nicbarker/clay) for laying out
+2D user interfaces with a flexbox-style model. Describe your UI each frame;
+claygo calculates sizes and positions, then returns drawing commands for your
+renderer.
 
 - **No cgo, no dependencies.** Standard library only.
-- **Capacity-bounded layout state.** You provide an arena capacity up front;
-  claygo reserves fixed-capacity internal buffers from that budget and
-  reports capacity overruns through your `ErrorHandler`.
-- **Immediate-mode API.** Re-declare your whole UI tree every frame; claygo
-  diffs nothing and keeps no retained widget graph.
-- **Renderer-owned drawing.** claygo emits rectangles, text, images, borders,
-  scissor commands, overlays, and custom commands; your renderer interprets
-  them.
-- **Parity-tested against upstream Clay.** A C oracle (`oracle/`) is compiled
-  from the original `clay.h` and its output is compared against claygo's in the
-  test suite. Parity covers the upstream feature set; the few claygo
-  extensions (below) are oracle-tested the same way through a patched copy of
-  the header.
+- **Set layout limits.** Choose the capacity when you create a context;
+  claygo reports overflows through your `ErrorHandler`.
+- **Immediate-mode API.** Declare the UI each frame, without keeping widget
+  objects between frames.
+- **Use your own renderer.** Draw with SDL, OpenGL, a terminal, a canvas, or
+  whatever fits your application.
+- **Tested against Clay's C implementation.** Shared layout scenes check that
+  claygo produces the same render commands. See
+  [Relationship to upstream Clay](#relationship-to-upstream-clay) for the
+  features and fixes that differ from upstream.
 
 ## Which Go port of Clay should I use?
 
-There are two. Pick by what you want:
+claygo is written by hand in Go and provides layout only. Choose it if you
+want to work directly with the layout code and use your own renderer.
 
-- **claygo (this one)** is hand-written Go. It reads like normal Go, has no
-  dependencies and no `unsafe` in its API, and is easy to debug and extend. It
-  does layout only — you bring your own renderer.
-- **[TotallyGamerJet/clay](https://github.com/TotallyGamerJet/clay)** is
-  generated automatically from Clay's C source. It stays in lockstep with
-  upstream for free and ships ready-made renderers (SDL, Ebitengine, software),
-  so its internals are generated C rather than idiomatic Go.
+[TotallyGamerJet/clay](https://github.com/TotallyGamerJet/clay) generates its
+layout code from Clay's C source and includes renderers for SDL, Ebitengine,
+and software drawing.
 
 ## Install
 
@@ -51,16 +44,15 @@ frame you:
 3. get back a `RenderCommandArray`,
 4. draw the commands with your own renderer.
 
-The canonical per-frame call order (input *before* `BeginLayout`, output
-*after* `EndLayout`):
+Feed input before `BeginLayout`, then draw the commands returned by `EndLayout`:
 
 ```go
-ctx.SetPointerState(pos, isDown)              // 1. pointer hits + OnHover, vs last frame's bboxes
-ctx.UpdateScrollContainers(true, wheel, dt)   // 2. advance drag / momentum / wheel scroll
-ctx.BeginLayout()                             // 3. reset per-frame state, open the root
-//    ... claygo.Box / claygo.Text declarations ...   4. declare the tree
-cmds := ctx.EndLayout(dt)                     // 5. run the solver → sorted command list
-myRenderer.Draw(cmds)                         // 6. paint
+ctx.SetPointerState(pos, isDown)
+ctx.UpdateScrollContainers(true, wheel, dt)
+ctx.BeginLayout()
+// Declare the UI with claygo.Box and claygo.Text.
+cmds := ctx.EndLayout(dt)
+myRenderer.Draw(cmds)
 ```
 
 `SetPointerState` can be skipped if you have no pointer input;
@@ -68,10 +60,9 @@ myRenderer.Draw(cmds)                         // 6. paint
 
 ### Memory model
 
-In this Go port the arena is a logical capacity budget, not raw object storage:
-internal arrays are backed by typed Go slices so strings, interfaces, and
-function pointers remain visible to the garbage collector. Size the arena
-before `Initialize`:
+The arena sets a memory budget for claygo's internal buffers. The buffers are
+Go slices managed by the garbage collector. Choose the budget before creating
+the context:
 
 ```go
 arena := claygo.CreateArenaWithCapacity(claygo.MinMemorySize())
@@ -97,9 +88,9 @@ the buffers already reserved for that context.
 
 ### Text measurement
 
-claygo doesn't rasterize text — it asks *you* how big a string is. Install a
-measure callback once; it's invoked many times per frame (once per word for
-wrappable text, plus cache misses):
+claygo asks your renderer how big the text is. Install a measurement callback
+when you create the context. claygo measures individual words for wrapping and
+caches the results:
 
 ```go
 ctx.SetMeasureTextFunction(func(s claygo.StringSlice, cfg *claygo.TextElementConfig, _ any) claygo.Dimensions {
@@ -140,7 +131,7 @@ func main() {
         return claygo.Dimensions{Width: float32(len(s.Text)) * cw, Height: float32(cfg.FontSize + 4)}
     }, nil)
 
-    // --- one frame ---
+    // Draw one frame.
     ctx.SetPointerState(claygo.Vector2{}, false)
     ctx.BeginLayout()
     claygo.Box(ctx, claygo.Decl{
@@ -200,9 +191,9 @@ The zero value of `LayoutDirection` is `LeftToRight`. Set
 
 ## Render commands
 
-`EndLayout` returns a `RenderCommandArray` already sorted in ascending draw
-order — iterate it naively. Switch on `cmd.CommandType` and read the matching
-field of `cmd.RenderData`:
+`EndLayout` returns a `RenderCommandArray` in draw order. Process the commands
+from first to last, switching on `cmd.CommandType` to read the matching field
+of `cmd.RenderData`:
 
 | `CommandType` | Payload field |
 |---------------|---------------|
@@ -269,19 +260,13 @@ For host-managed scroll views, enable external scroll handling with
 
 ## Extensions beyond upstream Clay
 
-claygo adds a small number of features upstream Clay does not have. Each is
-off by default (zero value), leaves the default path byte-identical to
-upstream, and has its own C reference implementation applied as a patch on top
-of the vendored header, so it is golden-tested like everything else. The
-divergences are catalogued in `oracle/UPSTREAM.md` under "Extensions"; the
-process for adding one is `docs/extensions.md`.
+claygo adds child wrapping and clip scopes for floating panels. Both are off
+by default.
 
 ### Child wrapping (`LayoutConfig.WrapChildren`)
 
-Upstream Clay wraps text but never boxes: a row that runs out of width either
-shrinks its children or overflows. `WrapChildren` makes children that do not
-fit on the layout axis start a new line, rows stacked top to bottom for
-`LeftToRight`, columns stacked left to right for `TopToBottom`:
+Set `WrapChildren` to start a new row when the next child does not fit.
+With `TopToBottom` layout, it starts a new column instead:
 
 ```go
 claygo.Box(ctx, claygo.Decl{
@@ -298,42 +283,69 @@ claygo.Box(ctx, claygo.Decl{
 })
 ```
 
-Lines break greedily, in declaration order, at the sizes children have before
-`Grow` distributes space; `Grow` children then share their own line's slack.
-`ChildGap` separates the children within a line and `WrapLineGap` separates
-the lines, so the two directions are set independently; `ChildAlignment`
-places each line's content on the layout axis and each child within its line
-on the cross axis, between-children borders draw within and between lines,
-and a clipping wrap parent reports the stacked lines as its scroll content.
-A wrapping parent whose children fit on one line lays out **exactly** as it
-would without the flag (the test suite runs the entire upstream corpus with
-the flag forced on).
-Column wrap needs child heights before it can break, so a frame that contains
-one runs the sizing sweep twice; frames without pay nothing. Full semantics:
-`docs/child-wrap-spec.md`.
+Children keep their declaration order. Line breaks are chosen before `Grow`
+children share the space left on their line. `ChildGap` controls the space
+between children; `WrapLineGap` controls the space between rows or columns.
+
+Alignment, borders, and scroll content size follow the wrapped lines. If all
+children fit on one line, enabling wrapping leaves the layout unchanged.
+
+### Floating clip scopes (`FloatingElementConfig.ClipScopes`)
+
+Use `ClipScopes` to keep a floating panel's drawing and pointer input within
+one or more viewports. The panel can be declared anywhere in the layout.
+This example clips it to the top and bottom edges of `Pane`:
+
+```go
+claygo.BoxID(ctx, "Panel", claygo.Decl{
+    Layout: claygo.LayoutConfig{
+        Sizing: claygo.Sizing{Width: claygo.SizingFixed(200), Height: claygo.SizingFixed(120)},
+    },
+    Floating: claygo.FloatingElementConfig{
+        AttachTo: claygo.AttachToRoot,
+        ClipScopes: []claygo.ClipScope{
+            {ElementID: claygo.GetElementID("Pane"), Vertical: true},
+        },
+    },
+}, func() {
+    // Declare the panel's contents here.
+})
+```
+
+Set `Horizontal` to clip the left and right edges, or set both flags to clip
+all four. This only affects drawing and pointer input; it does not move or
+resize the panel.
+
+claygo copies the active entries when you declare the panel, so you can reuse
+the slice afterward. Targets can be declared later in the frame, and clipping
+follows their bounds during animations. If an active target is missing, the
+panel is hidden and receives no pointer input. Empty slices and entries with
+both flags off add no restriction.
+
+`ClipToAttachedParent` still applies the parent's clipping as well.
+`ClipToNone` turns off that inheritance but keeps explicit scopes active.
+See the [clip scopes specification](docs/clip-scopes-spec.md) for details.
 
 ## Thread safety
 
 A `Context` is **not** safe for concurrent use. Build the layout on one
-goroutine. If a renderer runs on another, snapshot the `RenderCommandArray`
-before handing it off — the live array is overwritten by the next `EndLayout`.
+goroutine. If a renderer runs on another, copy the render commands before
+handing them off; the next `EndLayout` overwrites the context's command buffer.
 
 ## Relationship to upstream Clay
 
-claygo mirrors the structure and behaviour of Clay closely enough that source
-comments reference upstream line numbers (`oracle/clay.h ~line NNNN`). The
-`oracle/` directory builds the real C library and the test suite checks
-claygo's layout output against it for parity. See the
-[Clay documentation](https://github.com/nicbarker/clay) for conceptual
-background — most of it applies directly.
+claygo follows Clay's layout model. The
+[Clay documentation](https://github.com/nicbarker/clay) is a useful guide to
+the concepts; for the Go API, run `go doc github.com/befabri/claygo`.
 
-The exact upstream commit is pinned in `oracle/CLAY_VERSION`. When Clay
-changes, `make -C oracle update-clay REF=<tag>` re-vendors the header and
-regenerates the golden corpus; `oracle/UPSTREAM.md` documents the full
-bump workflow.
+The port tracks the commit recorded in [CLAY_VERSION](oracle/CLAY_VERSION).
+Shared test scenes compare its output with the original C library. claygo also
+includes [clipping fixes](oracle/UPSTREAM.md#native-corrections) that apply by
+default, independently of the optional extensions above.
 
-Full Go API reference: run `go doc github.com/befabri/claygo` or browse it on
-pkg.go.dev once published.
+For instructions on updating the C reference or adding test scenes, see
+[Tracking upstream Clay](oracle/UPSTREAM.md). To add an extension, follow the
+[extension guide](docs/extensions.md).
 
 ## License
 
